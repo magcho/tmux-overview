@@ -1,0 +1,84 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/magcho/tmux-overview/internal/config"
+	"github.com/magcho/tmux-overview/internal/tmux"
+)
+
+type mockClient struct{}
+
+func (c *mockClient) ListSessions() ([]tmux.Session, error)                     { return nil, nil }
+func (c *mockClient) ListAllPanes() ([]tmux.Pane, error)                        { return nil, nil }
+func (c *mockClient) CapturePaneContent(id string, lines int) ([]string, error) { return nil, nil }
+func (c *mockClient) SwitchToPane(p tmux.Pane) error                            { return nil }
+func (c *mockClient) IsInsideTmux() bool                                        { return true }
+
+func testPanes() []tmux.Pane {
+	return []tmux.Pane{
+		{ID: "%21", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusRunning, Duration: 42 * time.Second, Width: 220, Height: 50, PID: 48291, Active: true, WindowActive: true, Preview: []string{"> Analyzing component tree...", "✓ Updated Button.tsx", "✓ Updated index.ts", "■ Writing tests..."}},
+		{ID: "%22", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusDone, Width: 110, Height: 25, PID: 48292, Preview: []string{"✓ Task completed"}},
+		{ID: "%23", SessionName: "work", WindowIndex: 2, WindowName: "api-server", CWD: "/Users/test/src/api-server", Status: tmux.StatusIdle, Width: 110, Height: 25, PID: 48293},
+		{ID: "%31", SessionName: "dev", WindowIndex: 1, WindowName: "dashboard", CWD: "/Users/test/src/dashboard", Status: tmux.StatusRunning, Duration: 120 * time.Second, Width: 110, Height: 25, PID: 48301, Preview: []string{"Reading files...", "Thinking..."}},
+		{ID: "%38", SessionName: "dev", WindowIndex: 2, WindowName: "infra", CWD: "/Users/test/src/infra", Status: tmux.StatusError, Width: 110, Height: 25, PID: 48302, Preview: []string{"Error: connection refused"}},
+		{ID: "%45", SessionName: "misc", WindowIndex: 1, WindowName: "scratch", CWD: "/Users/test/scratch", Status: tmux.StatusIdle, Width: 80, Height: 24, PID: 48401},
+		{ID: "%46", SessionName: "misc", WindowIndex: 2, WindowName: "notes", CWD: "/Users/test/notes", Status: tmux.StatusUnknown, Width: 80, Height: 24, PID: 48402},
+	}
+}
+
+func testModel(width, height int) Model {
+	cfg := config.DefaultConfig()
+	detector := tmux.NewStatusDetector()
+	m := NewModel(&mockClient{}, detector, cfg)
+	m.width = width
+	m.height = height
+	m.sessionNames = []string{"work", "dev", "misc"}
+	m.allPanes = testPanes()
+	return m
+}
+
+func TestViewHeight24(t *testing.T) {
+	m := testModel(120, 24)
+	checkViewFits(t, m, "24-line terminal")
+}
+
+func TestViewHeight40(t *testing.T) {
+	m := testModel(120, 40)
+	checkViewFits(t, m, "40-line terminal (preview should appear)")
+}
+
+func TestViewHeight50(t *testing.T) {
+	m := testModel(120, 50)
+	checkViewFits(t, m, "50-line terminal (large)")
+}
+
+func TestViewHeightSmall(t *testing.T) {
+	m := testModel(80, 15)
+	checkViewFits(t, m, "15-line terminal (small)")
+}
+
+func TestViewPreviewCollapsed(t *testing.T) {
+	m := testModel(120, 24)
+	m.previewExpanded = false
+	checkViewFits(t, m, "24-line collapsed preview")
+}
+
+func checkViewFits(t *testing.T, m Model, label string) {
+	t.Helper()
+	output := m.View()
+	lines := strings.Split(output, "\n")
+
+	fmt.Printf("=== %s: %d lines for %d height ===\n", label, len(lines), m.height)
+	for i, line := range lines {
+		fmt.Printf("%3d: %s\n", i+1, line)
+	}
+	fmt.Println()
+
+	if len(lines) > m.height {
+		t.Errorf("[%s] View output has %d lines, exceeds terminal height %d (overflow: %d)", label, len(lines), m.height, len(lines)-m.height)
+	}
+}

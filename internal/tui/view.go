@@ -25,8 +25,7 @@ var (
 	// Session sidebar styles
 	sidebarTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("75")).
-				PaddingBottom(1)
+				Foreground(lipgloss.Color("75"))
 
 	sessionSelectedStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -47,8 +46,7 @@ var (
 	// Pane detail styles
 	detailTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("75")).
-				PaddingBottom(1)
+				Foreground(lipgloss.Color("75"))
 
 	detailLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("241")).
@@ -61,9 +59,9 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("238"))
 
-	previewBorder = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("241"))
+	previewLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241")).
+				Italic(true)
 
 	// Pane list styles
 	listTitleStyle = lipgloss.NewStyle().
@@ -107,6 +105,8 @@ var (
 			Bold(true)
 )
 
+const borderOverhead = 2 // top + bottom border lines
+
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -121,6 +121,35 @@ func (m Model) View() string {
 		h = 24
 	}
 
+	// Layout budget (vertical):
+	//   header:  1 line
+	//   middle:  middleInner + 2 (border)
+	//   list:    listInner + 2 (border)
+	//   footer:  2 lines
+	//   Total = middleInner + listInner + 7
+	//   => listInner = h - middleInner - 7
+
+	const fixedLines = 1 + borderOverhead + borderOverhead + 2 // header + 2 borders + footer
+
+	available := h - fixedLines
+	var middleInner int
+	if m.previewExpanded {
+		middleInner = available * 2 / 3
+		if middleInner > 18 {
+			middleInner = 18
+		}
+	} else {
+		middleInner = min(8, available*2/3)
+	}
+	if middleInner < 3 {
+		middleInner = 3
+	}
+
+	listInner := available - middleInner
+	if listInner < 3 {
+		listInner = 3
+	}
+
 	var sections []string
 
 	// === Header ===
@@ -128,35 +157,21 @@ func (m Model) View() string {
 
 	// === Middle: Sessions sidebar | Pane Detail ===
 	sidebarWidth := 16
-	detailWidth := w - sidebarWidth - 6 // account for borders and padding
+	detailWidth := w - sidebarWidth - borderOverhead - borderOverhead - 2
 	if detailWidth < 30 {
 		detailWidth = 30
 	}
 
-	// Calculate heights for middle section
-	middleHeight := 0
-	if m.previewExpanded {
-		middleHeight = min(h/3, 16)
-	} else {
-		middleHeight = 4
-	}
-	if middleHeight < 4 {
-		middleHeight = 4
-	}
-
-	sidebar := m.viewSessionSidebar(sidebarWidth, middleHeight)
-	detail := m.viewPaneDetail(detailWidth, middleHeight)
+	sidebar := m.viewSessionSidebar(sidebarWidth, middleInner)
+	detail := m.viewPaneDetail(detailWidth, middleInner)
 	middle := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, detail)
 	sections = append(sections, middle)
 
 	// === Pane List ===
-	// Remaining height for pane list
-	usedHeight := 3 + middleHeight + 4 + 2 // header + middle + footer + borders
-	listHeight := max(h-usedHeight, 5)
-	sections = append(sections, m.viewPaneList(w, listHeight))
+	sections = append(sections, m.viewPaneList(w, listInner))
 
 	// === Footer ===
-	sections = append(sections, m.viewFooter(w))
+	sections = append(sections, m.viewFooter())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
@@ -188,46 +203,38 @@ func (m Model) viewHeader(width int) string {
 	header := strings.Join(parts, "  │  ")
 
 	if m.err != nil {
-		header += "\n" + errorMsgStyle.Render(fmt.Sprintf("  Error: %v", m.err))
+		header += "  " + errorMsgStyle.Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
 	return header
 }
 
-func (m Model) viewSessionSidebar(width, height int) string {
-	var b strings.Builder
-	b.WriteString(sidebarTitleStyle.Render("SESSIONS"))
-	b.WriteString("\n")
+func (m Model) viewSessionSidebar(width, innerHeight int) string {
+	var lines []string
+	lines = append(lines, sidebarTitleStyle.Render("SESSIONS"))
 
 	// "All" option
 	allLabel := "  All"
 	if m.sessionCursor == 0 {
-		allLabel = "▶ All"
-		allLabel = sessionSelectedStyle.Render(allLabel)
+		allLabel = sessionSelectedStyle.Render("▶ All")
 	} else {
 		allLabel = sessionNormalStyle.Render(allLabel)
 	}
-	b.WriteString(allLabel)
-	b.WriteString("\n")
+	lines = append(lines, allLabel)
 
 	for i, name := range m.sessionNames {
 		label := name
 		if len(label) > width-4 {
 			label = label[:width-7] + "…"
 		}
-		prefix := "  "
 		if m.sessionCursor == i+1 {
-			prefix = "▶ "
-			line := prefix + label
-			b.WriteString(sessionSelectedStyle.Render(line))
+			lines = append(lines, sessionSelectedStyle.Render("▶ "+label))
 		} else {
-			line := prefix + label
-			b.WriteString(sessionNormalStyle.Render(line))
+			lines = append(lines, sessionNormalStyle.Render("  "+label))
 		}
-		b.WriteString("\n")
 	}
 
-	content := b.String()
+	content := truncateLines(lines, innerHeight)
 
 	borderStyle := sessionUnfocusedBorder
 	if m.focus == focusSessions {
@@ -236,109 +243,114 @@ func (m Model) viewSessionSidebar(width, height int) string {
 
 	return borderStyle.
 		Width(width).
-		Height(height).
+		Height(innerHeight).
 		Render(content)
 }
 
-func (m Model) viewPaneDetail(width, height int) string {
-	var b strings.Builder
-	b.WriteString(detailTitleStyle.Render("PANE DETAIL"))
-	b.WriteString("\n")
+func (m Model) viewPaneDetail(width, innerHeight int) string {
+	var lines []string
+	lines = append(lines, detailTitleStyle.Render("PANE DETAIL"))
 
 	pane := m.selectedPane()
 	if pane == nil {
-		b.WriteString(statsStyle.Render("  No pane selected"))
+		lines = append(lines, statsStyle.Render("  No pane selected"))
+		content := truncateLines(lines, innerHeight)
 		return detailBorder.
 			Width(width).
-			Height(height).
-			Render(b.String())
+			Height(innerHeight).
+			Render(content)
 	}
 
 	p := *pane
 
-	// Detail fields
-	writeDetail := func(label, value string) {
-		b.WriteString(detailLabelStyle.Render(label))
-		b.WriteString(detailValueStyle.Render(value))
-		b.WriteString("\n")
+	addDetail := func(label, value string) {
+		lines = append(lines, detailLabelStyle.Render(label)+detailValueStyle.Render(value))
 	}
 
-	writeDetail("Session", p.SessionName)
-	writeDetail("Window", fmt.Sprintf("%d:%s", p.WindowIndex, p.WindowName))
+	addDetail("Session", p.SessionName)
+	addDetail("Window", fmt.Sprintf("%d:%s", p.WindowIndex, p.WindowName))
 
 	activeStr := ""
 	if p.Active && p.WindowActive {
 		activeStr = "  (active)"
 	}
-	writeDetail("Pane", p.ID+activeStr)
-	writeDetail("CWD", abbreviateHome(p.CWD))
-	writeDetail("Size", fmt.Sprintf("%dx%d", p.Width, p.Height))
-	writeDetail("PID", fmt.Sprintf("%d", p.PID))
+	addDetail("Pane", p.ID+activeStr)
+	addDetail("CWD", abbreviateHome(p.CWD))
+	addDetail("Size", fmt.Sprintf("%dx%d", p.Width, p.Height))
+	addDetail("PID", fmt.Sprintf("%d", p.PID))
 
 	statusStr := styledStatus(p.Status)
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
 		statusStr += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
 	}
-	b.WriteString(detailLabelStyle.Render("Status"))
-	b.WriteString(statusStr)
-	b.WriteString("\n")
+	lines = append(lines, detailLabelStyle.Render("Status")+statusStr)
 
-	// Preview
+	// Preview (inline, no nested border)
 	if m.previewExpanded && len(p.Preview) > 0 {
-		b.WriteString("\n")
-		previewLines := filterEmptyTrailingLines(p.Preview)
-		maxLines := m.cfg.Display.PreviewLines
-		if len(previewLines) > maxLines {
-			previewLines = previewLines[len(previewLines)-maxLines:]
+		previewContent := filterEmptyTrailingLines(p.Preview)
+		// Limit preview lines to fit remaining space
+		remaining := innerHeight - len(lines) - 1 // -1 for "Preview:" label
+		if remaining > m.cfg.Display.PreviewLines {
+			remaining = m.cfg.Display.PreviewLines
 		}
-		previewContent := strings.Join(previewLines, "\n")
-		previewWidth := width - 4
-		if previewWidth < 20 {
-			previewWidth = 20
+		if remaining > 0 {
+			lines = append(lines, previewLabelStyle.Render("Preview:"))
+			if len(previewContent) > remaining {
+				previewContent = previewContent[len(previewContent)-remaining:]
+			}
+			for _, pl := range previewContent {
+				lines = append(lines, "  "+pl)
+			}
 		}
-		b.WriteString(previewBorder.Width(previewWidth).Render(previewContent))
 	}
+
+	content := truncateLines(lines, innerHeight)
 
 	return detailBorder.
 		Width(width).
-		Height(height).
-		Render(b.String())
+		Height(innerHeight).
+		Render(content)
 }
 
-func (m Model) viewPaneList(width, height int) string {
-	var b strings.Builder
-	b.WriteString(listTitleStyle.Render("PANE LIST"))
-	b.WriteString("\n")
+func (m Model) viewPaneList(width, innerHeight int) string {
+	var lines []string
+	lines = append(lines, listTitleStyle.Render("PANE LIST"))
 
 	// Column header
-	colWidth := width - 6
-	if colWidth < 60 {
-		colWidth = 60
-	}
 	header := fmt.Sprintf("  %-30s %-7s %-14s %s", "SESSION:WIN", "PANE", "STATUS", "CWD")
-	b.WriteString(listHeaderStyle.Render(header))
-	b.WriteString("\n")
-	b.WriteString(listHeaderStyle.Render(strings.Repeat("─", min(colWidth, 78))))
-	b.WriteString("\n")
+	lines = append(lines, listHeaderStyle.Render(header))
+	colWidth := min(width-6, 78)
+	if colWidth < 40 {
+		colWidth = 40
+	}
+	lines = append(lines, listHeaderStyle.Render(strings.Repeat("─", colWidth)))
 
 	panes := m.visiblePanes()
 
 	if len(panes) == 0 {
 		if len(m.allPanes) == 0 {
-			b.WriteString(statsStyle.Render("  No tmux panes found."))
+			lines = append(lines, statsStyle.Render("  No tmux panes found."))
 		} else {
-			b.WriteString(statsStyle.Render("  No panes match filter."))
+			lines = append(lines, statsStyle.Render("  No panes match filter."))
 		}
-		b.WriteString("\n")
+	}
+
+	// Available rows for pane entries (innerHeight - header lines - optional scroll indicator)
+	headerLines := 3 // title + column header + separator
+	paneRows := innerHeight - headerLines
+	if len(panes) > paneRows {
+		paneRows-- // reserve 1 line for scroll indicator
+	}
+	if paneRows < 1 {
+		paneRows = 1
 	}
 
 	// Scrolling
-	listAvail := max(height-4, 3)
 	start := 0
-	if m.paneCursor >= listAvail {
-		start = m.paneCursor - listAvail + 1
+	if m.paneCursor >= paneRows {
+		start = m.paneCursor - paneRows + 1
 	}
-	end := min(start+listAvail, len(panes))
+	end := min(start+paneRows, len(panes))
 
 	cwdMax := m.cfg.Display.CWDMaxLength
 	for i := start; i < end; i++ {
@@ -346,21 +358,21 @@ func (m Model) viewPaneList(width, height int) string {
 		line := formatPaneLine(p, cwdMax)
 
 		if i == m.paneCursor {
-			b.WriteString(paneSelectedStyle.Render("▶ " + line))
+			lines = append(lines, paneSelectedStyle.Render("▶ "+line))
 		} else if p.Status == tmux.StatusError {
-			b.WriteString(paneErrorStyle.Render("  " + line))
+			lines = append(lines, paneErrorStyle.Render("  "+line))
 		} else {
-			b.WriteString(paneNormalStyle.Render("  " + line))
+			lines = append(lines, paneNormalStyle.Render("  "+line))
 		}
-		b.WriteString("\n")
 	}
 
 	// Scroll indicator
-	if len(panes) > listAvail {
+	if len(panes) > paneRows {
 		indicator := fmt.Sprintf("  (%d/%d)", m.paneCursor+1, len(panes))
-		b.WriteString(statsStyle.Render(indicator))
-		b.WriteString("\n")
+		lines = append(lines, statsStyle.Render(indicator))
 	}
+
+	content := truncateLines(lines, innerHeight)
 
 	borderStyle := listUnfocusedBorder
 	if m.focus == focusPaneList {
@@ -369,11 +381,11 @@ func (m Model) viewPaneList(width, height int) string {
 
 	return borderStyle.
 		Width(width - 2).
-		Height(height).
-		Render(b.String())
+		Height(innerHeight).
+		Render(content)
 }
 
-func (m Model) viewFooter(_ int) string {
+func (m Model) viewFooter() string {
 	if m.filterMode {
 		return footerStyle.Render(" [Enter] 確定  [Esc] キャンセル")
 	}
@@ -383,6 +395,14 @@ func (m Model) viewFooter(_ int) string {
 }
 
 // === Helpers ===
+
+// truncateLines joins lines and truncates to maxLines.
+func truncateLines(lines []string, maxLines int) string {
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+	return strings.Join(lines, "\n")
+}
 
 func formatPaneLine(p tmux.Pane, cwdMax int) string {
 	label := p.FlatLabel()
@@ -458,12 +478,14 @@ func abbreviateHome(path string) string {
 }
 
 func filterEmptyTrailingLines(lines []string) []string {
-	for len(lines) > 0 {
-		if strings.TrimSpace(lines[len(lines)-1]) == "" {
-			lines = lines[:len(lines)-1]
+	result := make([]string, len(lines))
+	copy(result, lines)
+	for len(result) > 0 {
+		if strings.TrimSpace(result[len(result)-1]) == "" {
+			result = result[:len(result)-1]
 		} else {
 			break
 		}
 	}
-	return lines
+	return result
 }
