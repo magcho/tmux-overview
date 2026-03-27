@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,27 +23,6 @@ var (
 				Foreground(lipgloss.Color("205")).
 				Bold(true)
 
-	// Session sidebar styles
-	sidebarTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("75"))
-
-	sessionSelectedStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("229")).
-				Background(lipgloss.Color("57"))
-
-	sessionNormalStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252"))
-
-	sessionFocusedBorder = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("75"))
-
-	sessionUnfocusedBorder = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("238"))
-
 	// Pane detail styles
 	detailTitleStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -57,7 +37,7 @@ var (
 
 	detailBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("238"))
+			BorderForeground(lipgloss.Color("75"))
 
 	previewLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("241")).
@@ -81,19 +61,14 @@ var (
 	paneErrorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196"))
 
-	listFocusedBorder = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("75"))
-
-	listUnfocusedBorder = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("238"))
+	listBorder = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("75"))
 
 	// Status styles
 	statusRunningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	statusDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	statusErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	statusIdleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	statusUnknownStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
 	// Footer
@@ -123,13 +98,11 @@ func (m Model) View() string {
 
 	// Layout budget (vertical):
 	//   header:  1 line
-	//   middle:  middleInner + 2 (border)
+	//   detail:  middleInner + 2 (border)
 	//   list:    listInner + 2 (border)
-	//   footer:  2 lines
-	//   Total = middleInner + listInner + 7
-	//   => listInner = h - middleInner - 7
-
-	const fixedLines = 1 + borderOverhead + borderOverhead + 2 // header + 2 borders + footer
+	//   footer:  1 line
+	//   Total = middleInner + listInner + 6
+	const fixedLines = 1 + borderOverhead + borderOverhead + 1 // header + 2 borders + footer
 
 	available := h - fixedLines
 	var middleInner int
@@ -155,17 +128,12 @@ func (m Model) View() string {
 	// === Header ===
 	sections = append(sections, m.viewHeader(w))
 
-	// === Middle: Sessions sidebar | Pane Detail ===
-	sidebarWidth := 16
-	detailWidth := w - sidebarWidth - borderOverhead - borderOverhead - 2
+	// === Pane Detail (full width) ===
+	detailWidth := w - borderOverhead
 	if detailWidth < 30 {
 		detailWidth = 30
 	}
-
-	sidebar := m.viewSessionSidebar(sidebarWidth, middleInner)
-	detail := m.viewPaneDetail(detailWidth, middleInner)
-	middle := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, detail)
-	sections = append(sections, middle)
+	sections = append(sections, m.viewPaneDetail(detailWidth, middleInner))
 
 	// === Pane List ===
 	sections = append(sections, m.viewPaneList(w, listInner))
@@ -187,9 +155,9 @@ func (m Model) viewHeader(width int) string {
 	}
 
 	visible := m.visiblePanes()
-	stats := fmt.Sprintf("Sessions: %d  Panes: %d", len(m.sessionNames), len(m.allPanes))
+	stats := fmt.Sprintf("Claude: %d panes", len(visible))
 	if len(visible) != len(m.allPanes) {
-		stats += fmt.Sprintf("  (showing: %d)", len(visible))
+		stats += fmt.Sprintf(" / %d total", len(m.allPanes))
 	}
 	statsStr := statsStyle.Render(stats)
 
@@ -209,44 +177,6 @@ func (m Model) viewHeader(width int) string {
 	return header
 }
 
-func (m Model) viewSessionSidebar(width, innerHeight int) string {
-	var lines []string
-	lines = append(lines, sidebarTitleStyle.Render("SESSIONS"))
-
-	// "All" option
-	allLabel := "  All"
-	if m.sessionCursor == 0 {
-		allLabel = sessionSelectedStyle.Render("▶ All")
-	} else {
-		allLabel = sessionNormalStyle.Render(allLabel)
-	}
-	lines = append(lines, allLabel)
-
-	for i, name := range m.sessionNames {
-		label := name
-		if len(label) > width-4 {
-			label = label[:width-7] + "…"
-		}
-		if m.sessionCursor == i+1 {
-			lines = append(lines, sessionSelectedStyle.Render("▶ "+label))
-		} else {
-			lines = append(lines, sessionNormalStyle.Render("  "+label))
-		}
-	}
-
-	content := truncateLines(lines, innerHeight)
-
-	borderStyle := sessionUnfocusedBorder
-	if m.focus == focusSessions {
-		borderStyle = sessionFocusedBorder
-	}
-
-	return borderStyle.
-		Width(width).
-		Height(innerHeight).
-		Render(content)
-}
-
 func (m Model) viewPaneDetail(width, innerHeight int) string {
 	var lines []string
 	lines = append(lines, detailTitleStyle.Render("PANE DETAIL"))
@@ -262,6 +192,7 @@ func (m Model) viewPaneDetail(width, innerHeight int) string {
 	}
 
 	p := *pane
+	lang := m.cfg.Display.Language
 
 	addDetail := func(label, value string) {
 		lines = append(lines, detailLabelStyle.Render(label)+detailValueStyle.Render(value))
@@ -279,17 +210,19 @@ func (m Model) viewPaneDetail(width, innerHeight int) string {
 	addDetail("Size", fmt.Sprintf("%dx%d", p.Width, p.Height))
 	addDetail("PID", fmt.Sprintf("%d", p.PID))
 
-	statusStr := styledStatus(p.Status)
+	statusStr := styledStatusLabel(p.Status, lang)
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
 		statusStr += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
+	}
+	if p.Status == tmux.StatusDone && p.WaitDuration > 0 {
+		statusStr += fmt.Sprintf("  (%s)", formatDuration(p.WaitDuration))
 	}
 	lines = append(lines, detailLabelStyle.Render("Status")+statusStr)
 
 	// Preview (inline, no nested border)
 	if m.previewExpanded && len(p.Preview) > 0 {
 		previewContent := filterEmptyTrailingLines(p.Preview)
-		// Limit preview lines to fit remaining space
-		remaining := innerHeight - len(lines) - 1 // -1 for "Preview:" label
+		remaining := innerHeight - len(lines) - 1
 		if remaining > m.cfg.Display.PreviewLines {
 			remaining = m.cfg.Display.PreviewLines
 		}
@@ -313,13 +246,14 @@ func (m Model) viewPaneDetail(width, innerHeight int) string {
 }
 
 func (m Model) viewPaneList(width, innerHeight int) string {
+	lang := m.cfg.Display.Language
 	var lines []string
 	lines = append(lines, listTitleStyle.Render("PANE LIST"))
 
 	// Column header
-	header := fmt.Sprintf("  %-30s %-7s %-14s %s", "SESSION:WIN", "PANE", "STATUS", "CWD")
+	header := fmt.Sprintf("  %-24s %-16s %s", "DIRECTORY", "STATUS", "DURATION")
 	lines = append(lines, listHeaderStyle.Render(header))
-	colWidth := min(width-6, 78)
+	colWidth := min(width-6, 60)
 	if colWidth < 40 {
 		colWidth = 40
 	}
@@ -331,11 +265,11 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 		if len(m.allPanes) == 0 {
 			lines = append(lines, statsStyle.Render("  No tmux panes found."))
 		} else {
-			lines = append(lines, statsStyle.Render("  No panes match filter."))
+			lines = append(lines, statsStyle.Render("  No Claude panes found."))
 		}
 	}
 
-	// Available rows for pane entries (innerHeight - header lines - optional scroll indicator)
+	// Available rows for pane entries
 	headerLines := 3 // title + column header + separator
 	paneRows := innerHeight - headerLines
 	if len(panes) > paneRows {
@@ -352,10 +286,9 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 	}
 	end := min(start+paneRows, len(panes))
 
-	cwdMax := m.cfg.Display.CWDMaxLength
 	for i := start; i < end; i++ {
 		p := panes[i]
-		line := formatPaneLine(p, cwdMax)
+		line := formatPaneLine(p, lang)
 
 		if i == m.paneCursor {
 			lines = append(lines, paneSelectedStyle.Render("▶ "+line))
@@ -374,12 +307,7 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 
 	content := truncateLines(lines, innerHeight)
 
-	borderStyle := listUnfocusedBorder
-	if m.focus == focusPaneList {
-		borderStyle = listFocusedBorder
-	}
-
-	return borderStyle.
+	return listBorder.
 		Width(width - 2).
 		Height(innerHeight).
 		Render(content)
@@ -389,14 +317,11 @@ func (m Model) viewFooter() string {
 	if m.filterMode {
 		return footerStyle.Render(" [Enter] 確定  [Esc] キャンセル")
 	}
-	line1 := " [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [r] 更新"
-	line2 := " [Tab] フォーカス切替  [Space] プレビュー展開/折畳  [Esc] フィルタ解除  [1-9] セッション選択  [q] 終了"
-	return footerStyle.Render(line1) + "\n" + footerStyle.Render(line2)
+	return footerStyle.Render(" [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [Space] プレビュー展開/折畳  [r] 更新  [Esc] フィルタ解除  [q] 終了")
 }
 
 // === Helpers ===
 
-// truncateLines joins lines and truncates to maxLines.
 func truncateLines(lines []string, maxLines int) string {
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
@@ -404,45 +329,46 @@ func truncateLines(lines []string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatPaneLine(p tmux.Pane, cwdMax int) string {
-	label := p.FlatLabel()
-	if len(label) > 28 {
-		label = label[:25] + "…"
+func formatPaneLine(p tmux.Pane, lang string) string {
+	dir := filepath.Base(p.CWD)
+	if len(dir) > 22 {
+		dir = dir[:19] + "…"
 	}
 
-	statusStr := styledStatus(p.Status)
-	if p.Status == tmux.StatusRunning && p.Duration > 0 {
-		statusStr += fmt.Sprintf(" (%s)", formatDuration(p.Duration))
+	statusStr := styledStatusLabel(p.Status, lang)
+
+	var durationStr string
+	switch p.Status {
+	case tmux.StatusRunning:
+		if p.Duration > 0 {
+			durationStr = formatDuration(p.Duration)
+		} else {
+			durationStr = "0s"
+		}
+	case tmux.StatusDone:
+		if p.WaitDuration > 0 {
+			durationStr = formatDuration(p.WaitDuration)
+		} else {
+			durationStr = "0s"
+		}
+	default:
+		durationStr = "-"
 	}
 
-	cwd := abbreviateHome(p.CWD)
-	if cwdMax <= 0 {
-		cwdMax = 40
-	}
-	if len(cwd) > cwdMax {
-		cwd = "…" + cwd[len(cwd)-cwdMax+1:]
-	}
-
-	activeMarker := " "
-	if p.Active && p.WindowActive {
-		activeMarker = "*"
-	}
-
-	return fmt.Sprintf("%-28s %-6s%s %-14s %s", label, p.ID, activeMarker, statusStr, cwd)
+	return fmt.Sprintf("%-22s  %-16s  %s", dir, statusStr, durationStr)
 }
 
-func styledStatus(s tmux.PaneStatus) string {
+func styledStatusLabel(s tmux.PaneStatus, lang string) string {
+	label := s.Label(lang)
 	switch s {
 	case tmux.StatusRunning:
-		return statusRunningStyle.Render(s.String())
+		return statusRunningStyle.Render(label)
 	case tmux.StatusDone:
-		return statusDoneStyle.Render(s.String())
+		return statusDoneStyle.Render(label)
 	case tmux.StatusError:
-		return statusErrorStyle.Render(s.String())
-	case tmux.StatusIdle:
-		return statusIdleStyle.Render(s.String())
+		return statusErrorStyle.Render(label)
 	default:
-		return statusUnknownStyle.Render(s.String())
+		return statusUnknownStyle.Render(label)
 	}
 }
 

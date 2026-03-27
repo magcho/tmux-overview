@@ -6,17 +6,14 @@ import (
 )
 
 var DefaultRunningPatterns = []string{
-	`[◐◑◒◓⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]`,
-	`Analyzing`,
-	`Writing`,
-	`Reading`,
-	`Executing`,
-	`Running`,
-	`Thinking`,
+	`esc to interrupt`,            // Claude Code status bar during processing
+	`[◐◑◒◓⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]`,        // Legacy spinner characters
 }
 
 var DefaultDonePatterns = []string{
-	`^> $`,
+	`\? for shortcuts`,            // Claude Code status bar at prompt
+	`⏵⏵`,                         // Claude Code accept edits mode
+	`^> $`,                        // Legacy Claude prompt
 	`✓ Task completed`,
 }
 
@@ -27,7 +24,7 @@ var DefaultErrorPatterns = []string{
 }
 
 var defaultIdlePatterns = []string{
-	`[\$%❯#]\s*$`,
+	`[\$%#]\s*$`,                  // Shell prompt (❯ removed — used by Claude Code)
 }
 
 // StatusDetector detects pane status from capture-pane output.
@@ -88,16 +85,7 @@ func (d *StatusDetector) Detect(lines []string) PaneStatus {
 		return StatusUnknown
 	}
 
-	// Check error first (higher priority)
-	for _, line := range lastLines {
-		for _, re := range d.errorRegexps {
-			if re.MatchString(line) {
-				return StatusError
-			}
-		}
-	}
-
-	// Check running patterns
+	// Check running first (Claude Code status bar is most reliable)
 	for _, line := range lastLines {
 		for _, re := range d.runningRegexps {
 			if re.MatchString(line) {
@@ -111,6 +99,15 @@ func (d *StatusDetector) Detect(lines []string) PaneStatus {
 		for _, re := range d.doneRegexps {
 			if re.MatchString(line) {
 				return StatusDone
+			}
+		}
+	}
+
+	// Check error patterns
+	for _, line := range lastLines {
+		for _, re := range d.errorRegexps {
+			if re.MatchString(line) {
+				return StatusError
 			}
 		}
 	}

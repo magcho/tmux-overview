@@ -21,7 +21,7 @@ func (c *mockClient) IsInsideTmux() bool                                        
 func testPanes() []tmux.Pane {
 	return []tmux.Pane{
 		{ID: "%21", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusRunning, Duration: 42 * time.Second, Width: 220, Height: 50, PID: 48291, Active: true, WindowActive: true, Preview: []string{"> Analyzing component tree...", "✓ Updated Button.tsx", "✓ Updated index.ts", "■ Writing tests..."}},
-		{ID: "%22", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusDone, Width: 110, Height: 25, PID: 48292, Preview: []string{"✓ Task completed"}},
+		{ID: "%22", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusDone, WaitDuration: 15 * time.Second, Width: 110, Height: 25, PID: 48292, Preview: []string{"✓ Task completed"}},
 		{ID: "%23", SessionName: "work", WindowIndex: 2, WindowName: "api-server", CWD: "/Users/test/src/api-server", Status: tmux.StatusIdle, Width: 110, Height: 25, PID: 48293},
 		{ID: "%31", SessionName: "dev", WindowIndex: 1, WindowName: "dashboard", CWD: "/Users/test/src/dashboard", Status: tmux.StatusRunning, Duration: 120 * time.Second, Width: 110, Height: 25, PID: 48301, Preview: []string{"Reading files...", "Thinking..."}},
 		{ID: "%38", SessionName: "dev", WindowIndex: 2, WindowName: "infra", CWD: "/Users/test/src/infra", Status: tmux.StatusError, Width: 110, Height: 25, PID: 48302, Preview: []string{"Error: connection refused"}},
@@ -36,7 +36,6 @@ func testModel(width, height int) Model {
 	m := NewModel(&mockClient{}, detector, cfg)
 	m.width = width
 	m.height = height
-	m.sessionNames = []string{"work", "dev", "misc"}
 	m.allPanes = testPanes()
 	return m
 }
@@ -65,6 +64,47 @@ func TestViewPreviewCollapsed(t *testing.T) {
 	m := testModel(120, 24)
 	m.previewExpanded = false
 	checkViewFits(t, m, "24-line collapsed preview")
+}
+
+func TestVisiblePanesFiltering(t *testing.T) {
+	m := testModel(120, 24)
+	visible := m.visiblePanes()
+	// Should show only Running(2) + Done(1) + Error(1) = 4 panes, not Idle(2) or Unknown(1)
+	if len(visible) != 4 {
+		t.Errorf("expected 4 visible Claude panes, got %d", len(visible))
+	}
+	for _, p := range visible {
+		if p.Status == tmux.StatusIdle || p.Status == tmux.StatusUnknown {
+			t.Errorf("non-Claude pane %s with status %s should be filtered out", p.ID, p.Status)
+		}
+	}
+}
+
+func TestJapaneseStatusLabels(t *testing.T) {
+	tests := []struct {
+		status tmux.PaneStatus
+		want   string
+	}{
+		{tmux.StatusRunning, "🤖 処理中"},
+		{tmux.StatusDone, "⏳ 返答待ち"},
+		{tmux.StatusError, "❌ エラー"},
+	}
+	for _, tt := range tests {
+		got := tt.status.JapaneseLabel()
+		if got != tt.want {
+			t.Errorf("JapaneseLabel() for %v: got %q, want %q", tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestStatusLabelLanguageSwitch(t *testing.T) {
+	s := tmux.StatusRunning
+	if got := s.Label("en"); got != "🤖 Running" {
+		t.Errorf("Label(en): got %q, want %q", got, "🤖 Running")
+	}
+	if got := s.Label("ja"); got != "🤖 処理中" {
+		t.Errorf("Label(ja): got %q, want %q", got, "🤖 処理中")
+	}
 }
 
 func checkViewFits(t *testing.T, m Model, label string) {

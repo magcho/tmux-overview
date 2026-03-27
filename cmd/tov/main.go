@@ -15,9 +15,7 @@ import (
 
 func main() {
 	// CLI flags
-	sessionFlag := flag.String("s", "", "Filter by session name")
 	intervalFlag := flag.Int("interval", 0, "Auto-refresh interval in seconds (overrides config)")
-	filterFlag := flag.String("filter", "running", "Default filter text (empty string for no filter)")
 	flag.Parse()
 
 	// Check if tmux is available
@@ -52,16 +50,6 @@ func main() {
 
 	client := tmux.NewClient()
 	model := tui.NewModel(client, detector, cfg)
-
-	// Apply session filter from CLI flag
-	if *sessionFlag != "" {
-		model = model.WithSessionFilter(*sessionFlag)
-	}
-
-	// Apply default text filter from CLI flag
-	if *filterFlag != "" {
-		model = model.WithFilterText(*filterFlag)
-	}
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	finalModel, err := p.Run()

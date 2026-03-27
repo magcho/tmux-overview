@@ -28,6 +28,28 @@ func (s PaneStatus) String() string {
 	}
 }
 
+// JapaneseLabel returns the status label in Japanese.
+func (s PaneStatus) JapaneseLabel() string {
+	switch s {
+	case StatusRunning:
+		return "🤖 処理中"
+	case StatusDone:
+		return "⏳ 返答待ち"
+	case StatusError:
+		return "❌ エラー"
+	default:
+		return "❓ 不明"
+	}
+}
+
+// Label returns the status label in the specified language ("ja" for Japanese, default English).
+func (s PaneStatus) Label(lang string) string {
+	if lang == "ja" {
+		return s.JapaneseLabel()
+	}
+	return s.String()
+}
+
 type Session struct {
 	Name    string
 	Windows []Window
@@ -50,6 +72,7 @@ type Pane struct {
 	Active        bool
 	Status        PaneStatus
 	Duration      time.Duration
+	WaitDuration  time.Duration
 	Preview       []string
 	SessionName   string
 	WindowIndex   int

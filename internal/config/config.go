@@ -14,9 +14,10 @@ type Config struct {
 }
 
 type DisplayConfig struct {
-	Interval     int `toml:"interval"`
-	PreviewLines int `toml:"preview_lines"`
-	CWDMaxLength int `toml:"cwd_max_length"`
+	Interval     int    `toml:"interval"`
+	PreviewLines int    `toml:"preview_lines"`
+	CWDMaxLength int    `toml:"cwd_max_length"`
+	Language     string `toml:"language"`
 }
 
 type StatusConfig struct {
@@ -31,6 +32,7 @@ func DefaultConfig() Config {
 			Interval:     2,
 			PreviewLines: 10,
 			CWDMaxLength: 40,
+			Language:     "en",
 		},
 	}
 }
@@ -65,6 +67,9 @@ func Load() (Config, error) {
 	}
 	if cfg.Display.CWDMaxLength <= 0 {
 		cfg.Display.CWDMaxLength = 40
+	}
+	if cfg.Display.Language == "" {
+		cfg.Display.Language = "en"
 	}
 
 	return cfg, nil
