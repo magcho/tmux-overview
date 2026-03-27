@@ -390,7 +390,7 @@ func (m Model) viewFooter() string {
 		return footerStyle.Render(" [Enter] 確定  [Esc] キャンセル")
 	}
 	line1 := " [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [r] 更新"
-	line2 := " [Tab] フォーカス切替  [Space] プレビュー展開/折畳  [1-9] セッション選択  [q] 終了"
+	line2 := " [Tab] フォーカス切替  [Space] プレビュー展開/折畳  [Esc] フィルタ解除  [1-9] セッション選択  [q] 終了"
 	return footerStyle.Render(line1) + "\n" + footerStyle.Render(line2)
 }
 

@@ -84,6 +84,12 @@ func (m Model) WithSessionFilter(session string) Model {
 	return m
 }
 
+// WithFilterText returns a copy with the text filter pre-set (from --filter flag).
+func (m Model) WithFilterText(text string) Model {
+	m.filterText = text
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		fetchPanes(m.client, m.detector, m.cfg.Display.PreviewLines),

@@ -117,7 +117,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.previewExpanded = !m.previewExpanded
 
 	case keyEscape:
-		if m.selectedSession != "" {
+		if m.filterText != "" || m.selectedSession != "" {
+			m.filterText = ""
 			m.selectedSession = ""
 			m.sessionCursor = 0
 			m.paneCursor = 0
