@@ -23,25 +23,14 @@ var (
 				Foreground(lipgloss.Color("205")).
 				Bold(true)
 
-	// Pane detail styles
+	// Preview styles
 	detailTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("75"))
 
-	detailLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
-				Width(10)
-
-	detailValueStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252"))
-
 	detailBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("75"))
-
-	previewLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
-				Italic(true)
 
 	// Pane list styles
 	listTitleStyle = lipgloss.NewStyle().
@@ -68,6 +57,7 @@ var (
 	// Status styles
 	statusRunningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	statusDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	statusWaitingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
 	statusErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	statusUnknownStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
@@ -98,29 +88,25 @@ func (m Model) View() string {
 
 	// Layout budget (vertical):
 	//   header:  1 line
-	//   detail:  middleInner + 2 (border)
-	//   list:    listInner + 2 (border)
+	//   list:    listInner + 2 (border)  — fixed 10 inner
+	//   preview: previewInner + 2 (border) — remaining space
 	//   footer:  1 line
-	//   Total = middleInner + listInner + 6
-	const fixedLines = 1 + borderOverhead + borderOverhead + 1 // header + 2 borders + footer
+	const fixedLines = 1 + borderOverhead + borderOverhead + 1
 
 	available := h - fixedLines
-	var middleInner int
-	if m.previewExpanded {
-		middleInner = available * 2 / 3
-		if middleInner > 18 {
-			middleInner = 18
-		}
-	} else {
-		middleInner = min(8, available*2/3)
-	}
-	if middleInner < 3 {
-		middleInner = 3
+	listInner := 10
+	if listInner > available-3 {
+		listInner = max(3, available-3)
 	}
 
-	listInner := available - middleInner
-	if listInner < 3 {
-		listInner = 3
+	previewInner := available - listInner
+	if previewInner < 3 {
+		previewInner = 3
+	}
+
+	previewWidth := w - borderOverhead
+	if previewWidth < 30 {
+		previewWidth = 30
 	}
 
 	var sections []string
@@ -128,15 +114,11 @@ func (m Model) View() string {
 	// === Header ===
 	sections = append(sections, m.viewHeader(w))
 
-	// === Pane Detail (full width) ===
-	detailWidth := w - borderOverhead
-	if detailWidth < 30 {
-		detailWidth = 30
-	}
-	sections = append(sections, m.viewPaneDetail(detailWidth, middleInner))
-
-	// === Pane List ===
+	// === Pane List (top, compact) ===
 	sections = append(sections, m.viewPaneList(w, listInner))
+
+	// === Preview (bottom, maximized) ===
+	sections = append(sections, m.viewPreview(previewWidth, previewInner))
 
 	// === Footer ===
 	sections = append(sections, m.viewFooter())
@@ -177,12 +159,12 @@ func (m Model) viewHeader(width int) string {
 	return header
 }
 
-func (m Model) viewPaneDetail(width, innerHeight int) string {
+func (m Model) viewPreview(width, innerHeight int) string {
 	var lines []string
-	lines = append(lines, detailTitleStyle.Render("PANE DETAIL"))
 
 	pane := m.selectedPane()
 	if pane == nil {
+		lines = append(lines, detailTitleStyle.Render("PREVIEW"))
 		lines = append(lines, statsStyle.Render("  No pane selected"))
 		content := truncateLines(lines, innerHeight)
 		return detailBorder.
@@ -194,45 +176,28 @@ func (m Model) viewPaneDetail(width, innerHeight int) string {
 	p := *pane
 	lang := m.cfg.Display.Language
 
-	addDetail := func(label, value string) {
-		lines = append(lines, detailLabelStyle.Render(label)+detailValueStyle.Render(value))
-	}
-
-	addDetail("Session", p.SessionName)
-	addDetail("Window", fmt.Sprintf("%d:%s", p.WindowIndex, p.WindowName))
-
-	activeStr := ""
-	if p.Active && p.WindowActive {
-		activeStr = "  (active)"
-	}
-	addDetail("Pane", p.ID+activeStr)
-	addDetail("CWD", abbreviateHome(p.CWD))
-	addDetail("Size", fmt.Sprintf("%dx%d", p.Width, p.Height))
-	addDetail("PID", fmt.Sprintf("%d", p.PID))
-
-	statusStr := styledStatusLabel(p.Status, lang)
+	// 1-line summary: directory + status + duration
+	summary := detailTitleStyle.Render(filepath.Base(p.CWD)) + "  "
+	summary += styledStatusLabel(p.Status, lang)
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
-		statusStr += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
+		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
 	}
-	if p.Status == tmux.StatusDone && p.WaitDuration > 0 {
-		statusStr += fmt.Sprintf("  (%s)", formatDuration(p.WaitDuration))
+	if (p.Status == tmux.StatusDone || p.Status == tmux.StatusWaiting) && p.WaitDuration > 0 {
+		summary += fmt.Sprintf("  (%s)", formatDuration(p.WaitDuration))
 	}
-	lines = append(lines, detailLabelStyle.Render("Status")+statusStr)
+	summary += "  " + statsStyle.Render(abbreviateHome(p.CWD))
+	lines = append(lines, summary)
 
-	// Preview (inline, no nested border)
-	if m.previewExpanded && len(p.Preview) > 0 {
+	// Preview content — fill remaining space
+	if len(p.Preview) > 0 {
 		previewContent := filterEmptyTrailingLines(p.Preview)
-		remaining := innerHeight - len(lines) - 1
-		if remaining > m.cfg.Display.PreviewLines {
-			remaining = m.cfg.Display.PreviewLines
-		}
+		remaining := innerHeight - len(lines)
 		if remaining > 0 {
-			lines = append(lines, previewLabelStyle.Render("Preview:"))
 			if len(previewContent) > remaining {
 				previewContent = previewContent[len(previewContent)-remaining:]
 			}
 			for _, pl := range previewContent {
-				lines = append(lines, "  "+pl)
+				lines = append(lines, clipToWidth(pl, width))
 			}
 		}
 	}
@@ -345,7 +310,7 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 		} else {
 			durationStr = "0s"
 		}
-	case tmux.StatusDone:
+	case tmux.StatusDone, tmux.StatusWaiting:
 		if p.WaitDuration > 0 {
 			durationStr = formatDuration(p.WaitDuration)
 		} else {
@@ -365,6 +330,8 @@ func styledStatusLabel(s tmux.PaneStatus, lang string) string {
 		return statusRunningStyle.Render(label)
 	case tmux.StatusDone:
 		return statusDoneStyle.Render(label)
+	case tmux.StatusWaiting:
+		return statusWaitingStyle.Render(label)
 	case tmux.StatusError:
 		return statusErrorStyle.Render(label)
 	default:
@@ -401,6 +368,18 @@ func abbreviateHome(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
+}
+
+// clipToWidth truncates a string to fit within maxWidth runes.
+func clipToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxWidth {
+		return s
+	}
+	return string(runes[:maxWidth-1]) + "…"
 }
 
 func filterEmptyTrailingLines(lines []string) []string {

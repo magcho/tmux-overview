@@ -9,6 +9,7 @@ const (
 	StatusUnknown PaneStatus = iota
 	StatusRunning
 	StatusDone
+	StatusWaiting
 	StatusError
 	StatusIdle
 )
@@ -19,6 +20,8 @@ func (s PaneStatus) String() string {
 		return "🤖 Running"
 	case StatusDone:
 		return "✅ Done"
+	case StatusWaiting:
+		return "⏸ Waiting"
 	case StatusError:
 		return "❌ Error"
 	case StatusIdle:
@@ -35,6 +38,8 @@ func (s PaneStatus) JapaneseLabel() string {
 		return "🤖 処理中"
 	case StatusDone:
 		return "⏳ 返答待ち"
+	case StatusWaiting:
+		return "⏸ 確認待ち"
 	case StatusError:
 		return "❌ エラー"
 	default:

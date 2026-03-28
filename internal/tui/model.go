@@ -104,8 +104,8 @@ func fetchPanes(c tmux.Client, detector *tmux.StatusDetector, previewLines int) 
 			panes[i].Preview = lines
 			panes[i].Status = detector.Detect(lines)
 
-			// For Done panes, compute WaitDuration from hook file mtime
-			if panes[i].Status == tmux.StatusDone && !hookTime.IsZero() {
+			// For Done/Waiting panes, compute WaitDuration from hook file mtime
+			if (panes[i].Status == tmux.StatusDone || panes[i].Status == tmux.StatusWaiting) && !hookTime.IsZero() {
 				panes[i].WaitDuration = now.Sub(hookTime)
 			}
 		}
@@ -118,7 +118,7 @@ func fetchPanes(c tmux.Client, detector *tmux.StatusDetector, previewLines int) 
 func (m Model) visiblePanes() []tmux.Pane {
 	var panes []tmux.Pane
 	for _, p := range m.allPanes {
-		if p.Status == tmux.StatusRunning || p.Status == tmux.StatusDone || p.Status == tmux.StatusError {
+		if p.Status == tmux.StatusRunning || p.Status == tmux.StatusDone || p.Status == tmux.StatusWaiting || p.Status == tmux.StatusError {
 			panes = append(panes, p)
 		}
 	}

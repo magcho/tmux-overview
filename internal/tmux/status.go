@@ -17,6 +17,13 @@ var DefaultDonePatterns = []string{
 	`✓ Task completed`,
 }
 
+var DefaultWaitingPatterns = []string{
+	`Esc to cancel`,               // Claude Code confirmation dialog
+	`ctrl-g to edit`,              // Claude Code plan review mode
+	`shift\+tab to approve`,       // Claude Code plan approval
+	`Do you want to proceed`,      // Claude Code permission prompt
+}
+
 var DefaultErrorPatterns = []string{
 	`Error:`,
 	`Failed to`,
@@ -29,19 +36,21 @@ var defaultIdlePatterns = []string{
 
 // StatusDetector detects pane status from capture-pane output.
 type StatusDetector struct {
-	runningRegexps []*regexp.Regexp
-	doneRegexps    []*regexp.Regexp
-	errorRegexps   []*regexp.Regexp
-	idleRegexps    []*regexp.Regexp
+	runningRegexps  []*regexp.Regexp
+	doneRegexps     []*regexp.Regexp
+	waitingRegexps  []*regexp.Regexp
+	errorRegexps    []*regexp.Regexp
+	idleRegexps     []*regexp.Regexp
 }
 
 // NewStatusDetector creates a detector with default patterns.
 func NewStatusDetector() *StatusDetector {
 	return &StatusDetector{
-		runningRegexps: compilePatterns(DefaultRunningPatterns),
-		doneRegexps:    compilePatterns(DefaultDonePatterns),
-		errorRegexps:   compilePatterns(DefaultErrorPatterns),
-		idleRegexps:    compilePatterns(defaultIdlePatterns),
+		runningRegexps:  compilePatterns(DefaultRunningPatterns),
+		doneRegexps:     compilePatterns(DefaultDonePatterns),
+		waitingRegexps:  compilePatterns(DefaultWaitingPatterns),
+		errorRegexps:    compilePatterns(DefaultErrorPatterns),
+		idleRegexps:     compilePatterns(defaultIdlePatterns),
 	}
 }
 
@@ -99,6 +108,15 @@ func (d *StatusDetector) Detect(lines []string) PaneStatus {
 		for _, re := range d.doneRegexps {
 			if re.MatchString(line) {
 				return StatusDone
+			}
+		}
+	}
+
+	// Check waiting patterns (confirmation dialogs, plan review)
+	for _, line := range lastLines {
+		for _, re := range d.waitingRegexps {
+			if re.MatchString(line) {
+				return StatusWaiting
 			}
 		}
 	}
