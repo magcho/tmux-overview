@@ -33,9 +33,8 @@ type Model struct {
 	// Preview
 	previewExpanded bool
 
-	// Duration tracking: paneID -> first seen time for each status
+	// Running duration tracking: paneID -> first seen running time
 	runningStartTimes map[string]time.Time
-	doneStartTimes    map[string]time.Time
 
 	// Terminal size
 	width  int
@@ -56,7 +55,6 @@ func NewModel(client tmux.Client, detector *tmux.StatusDetector, cfg config.Conf
 		cfg:               cfg,
 		previewExpanded:   true,
 		runningStartTimes: make(map[string]time.Time),
-		doneStartTimes:    make(map[string]time.Time),
 	}
 }
 
@@ -84,7 +82,20 @@ func fetchPanes(c tmux.Client, detector *tmux.StatusDetector, previewLines int) 
 			return panesMsg{err: err}
 		}
 
+		// Scan hook-generated pane files to identify Claude panes.
+		// Returns map of pane coord key -> most recent hook mtime.
+		claudeFiles := tmux.ScanClaudePaneFiles()
+
+		now := time.Now()
 		for i := range panes {
+			hookTime := tmux.LookupPaneTime(panes[i], claudeFiles)
+
+			if claudeFiles != nil && hookTime.IsZero() {
+				// Not a Claude pane candidate — skip capture for efficiency
+				panes[i].Status = tmux.StatusIdle
+				continue
+			}
+
 			lines, captureErr := c.CapturePaneContent(panes[i].ID, previewLines)
 			if captureErr != nil {
 				panes[i].Status = tmux.StatusUnknown
@@ -92,6 +103,11 @@ func fetchPanes(c tmux.Client, detector *tmux.StatusDetector, previewLines int) 
 			}
 			panes[i].Preview = lines
 			panes[i].Status = detector.Detect(lines)
+
+			// For Done panes, compute WaitDuration from hook file mtime
+			if panes[i].Status == tmux.StatusDone && !hookTime.IsZero() {
+				panes[i].WaitDuration = now.Sub(hookTime)
+			}
 		}
 
 		return panesMsg{panes: panes}
@@ -124,16 +140,15 @@ func (m Model) selectedPane() *tmux.Pane {
 	return nil
 }
 
-// updateDurations updates running/done start times and sets Duration/WaitDuration on panes.
+// updateDurations updates running start times and sets Duration on panes.
+// WaitDuration for Done panes is computed from hook file mtime in fetchPanes.
 func (m *Model) updateDurations() {
 	now := time.Now()
 	activeRunning := make(map[string]bool)
-	activeDone := make(map[string]bool)
 
 	for i := range m.allPanes {
 		p := &m.allPanes[i]
-		switch p.Status {
-		case tmux.StatusRunning:
+		if p.Status == tmux.StatusRunning {
 			activeRunning[p.ID] = true
 			if startTime, exists := m.runningStartTimes[p.ID]; exists {
 				p.Duration = now.Sub(startTime)
@@ -141,37 +156,15 @@ func (m *Model) updateDurations() {
 				m.runningStartTimes[p.ID] = now
 				p.Duration = 0
 			}
-			p.WaitDuration = 0
-			// If it was previously Done, remove from doneStartTimes
-			delete(m.doneStartTimes, p.ID)
-
-		case tmux.StatusDone:
-			activeDone[p.ID] = true
-			if startTime, exists := m.doneStartTimes[p.ID]; exists {
-				p.WaitDuration = now.Sub(startTime)
-			} else {
-				m.doneStartTimes[p.ID] = now
-				p.WaitDuration = 0
-			}
+		} else {
 			p.Duration = 0
-			// If it was previously Running, remove from runningStartTimes
-			delete(m.runningStartTimes, p.ID)
-
-		default:
-			p.Duration = 0
-			p.WaitDuration = 0
 		}
 	}
 
-	// Clean up panes that are no longer in tracked status
+	// Clean up panes that are no longer running
 	for id := range m.runningStartTimes {
 		if !activeRunning[id] {
 			delete(m.runningStartTimes, id)
-		}
-	}
-	for id := range m.doneStartTimes {
-		if !activeDone[id] {
-			delete(m.doneStartTimes, id)
 		}
 	}
 }
