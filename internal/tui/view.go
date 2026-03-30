@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/magcho/tmux-overview/internal/tmux"
 )
 
@@ -296,8 +297,8 @@ func truncateLines(lines []string, maxLines int) string {
 
 func formatPaneLine(p tmux.Pane, lang string) string {
 	dir := filepath.Base(p.CWD)
-	if len(dir) > 22 {
-		dir = dir[:19] + "…"
+	if ansi.StringWidth(dir) > 22 {
+		dir = ansi.Truncate(dir, 22, "…")
 	}
 
 	statusStr := styledStatusLabel(p.Status, lang)
@@ -370,16 +371,12 @@ func abbreviateHome(path string) string {
 	return path
 }
 
-// clipToWidth truncates a string to fit within maxWidth runes.
+// clipToWidth truncates a string to fit within maxWidth display cells.
 func clipToWidth(s string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= maxWidth {
-		return s
-	}
-	return string(runes[:maxWidth-1]) + "…"
+	return ansi.Truncate(s, maxWidth, "…")
 }
 
 func filterEmptyTrailingLines(lines []string) []string {
