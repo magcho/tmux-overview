@@ -1,11 +1,13 @@
 # tov - tmux overseer
 
-tmuxの全セッション・ウィンドウ・ペインを一覧表示し、Claude Codeの実行状態を俯瞰しながら目的のペインへ素早くジャンプできるTUIツール。
+tmuxの全セッション・ウィンドウ・ペインを一覧表示し、AIコーディングエージェントの実行状態を俯瞰しながら目的のペインへ素早くジャンプできるTUIツール。
 
-Claude Codeのライフサイクルフックと連携し、各ペインの状態（処理中・確認待ち・完了など）をリアルタイムで表示します。
+対応エージェント: **Claude Code**, **Codex**
+
+各エージェントのライフサイクルフックと連携し、ペインの状態（処理中・確認待ち・完了など）をリアルタイムで表示します。
 
 ```
- tov   │  Claude: 3 panes
+ tov   │  Agent: 3 panes
 ╭──────────────────────────────────────────────────────╮
 │PANE LIST                                             │
 │  DIRECTORY                STATUS            DURATION │
@@ -40,18 +42,31 @@ make install   # ~/.local/bin/tov にインストール
 
 ## セットアップ
 
-Claude Codeのフック設定をインストールします。これにより、Claude Codeが状態変化時に自動で `tov` に通知するようになります。
+エージェントのフック設定をインストールします。これにより、エージェントが状態変化時に自動で `tov` に通知するようになります。
 
 ```bash
-# フック設定を ~/.claude/settings.json に追加
+# Claude Code のフック設定を追加（デフォルト）
 tov setup
+
+# Codex のフック設定を追加
+tov setup --agent codex
+
+# 全対応エージェントに一括設定
+tov setup --all
 
 # 変更内容をプレビュー（書き込みなし）
 tov setup --dry-run
+tov setup --agent codex --dry-run
 
 # フック設定を削除
 tov setup --remove
+tov setup --agent codex --remove
 ```
+
+| エージェント | 設定ファイル |
+|---|---|
+| Claude Code | `~/.claude/settings.json` |
+| Codex | `~/.codex/hooks.json` |
 
 ## 使い方
 
@@ -95,14 +110,25 @@ Filter: biwa running
 
 ## ペインステータス
 
-Claude Codeのライフサイクルフック（SessionStart, UserPromptSubmit, PreToolUse, Notification, Stop, SessionEnd）を受信して自動判定します。
+エージェントのライフサイクルフックを受信してステータスを自動判定します。
 
-| ステータス | 説明 |
-|-----------|------|
-| 📋 Registered | Claude Codeセッション開始（まだ実行前） |
-| 🤖 Running | プロンプト送信後、処理中 |
-| ⏸ Waiting | 権限確認など、ユーザー入力待ち |
-| ✅ Done | タスク完了 |
+| ステータス | 説明 | Claude Code | Codex |
+|-----------|------|:-----------:|:-----:|
+| 📋 Registered | セッション開始（まだ実行前） | ○ | ○ |
+| 🤖 Running | プロンプト送信後、処理中 | ○ | ○ |
+| ⏸ Waiting | 権限確認など、ユーザー入力待ち | ○ | - |
+| ✅ Done | タスク完了 | ○ | ○ |
+
+> Codexには `Notification` フックがないため、Waiting ステータスは検出されません。
+
+## エージェント検出
+
+`tov hook` コマンドは環境変数でエージェントを自動判定します。
+
+| 環境変数 | エージェント |
+|---|---|
+| `$CODEX_THREAD_ID` が設定されている | Codex |
+| それ以外（デフォルト） | Claude Code |
 
 ## 通知（macOS）
 

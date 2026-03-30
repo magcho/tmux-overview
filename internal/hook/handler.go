@@ -14,12 +14,12 @@ import (
 	"github.com/magcho/tmux-overview/internal/state"
 )
 
-// hookInput represents the common fields from Claude Code hook stdin JSON.
+// hookInput represents the common fields from agent hook stdin JSON.
 type hookInput struct {
 	SessionID        string `json:"session_id"`
 	CWD              string `json:"cwd"`
 	HookEventName    string `json:"hook_event_name"`
-	NotificationType string `json:"notification_type"`
+	NotificationType string `json:"notification_type"` // Claude Code only
 	TranscriptPath   string `json:"transcript_path"`
 	Message          string `json:"message"`
 }
@@ -33,8 +33,10 @@ type tmuxPaneInfo struct {
 	SocketPath  string // tmux server socket path from $TMUX
 }
 
-// HandleEvent processes a Claude Code hook event and updates the pane state file.
+// HandleEvent processes a hook event from any supported agent and updates the pane state file.
 func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCfg config.NotifyConfig) error {
+	agentDef := resolveAgent()
+
 	var input hookInput
 	if err := json.NewDecoder(stdin).Decode(&input); err != nil {
 		// stdin may be empty for some events; treat as empty input
@@ -43,15 +45,15 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 
 	paneInfo, err := getTmuxPaneInfo()
 	if err != nil {
-		// If not running inside tmux, exit silently (don't block Claude Code)
+		// If not running inside tmux, exit silently (don't block the agent)
 		fmt.Fprintf(os.Stderr, "tov hook: %v\n", err)
 		return nil
 	}
 
 	now := time.Now()
 
-	// SessionEnd: remove state file and return
-	if eventType == "SessionEnd" {
+	// Check if this event should remove the state file (e.g. SessionEnd for Claude)
+	if agentDef.ShouldRemoveOnEvent != nil && agentDef.ShouldRemoveOnEvent(eventType) {
 		return store.Remove(paneInfo.PaneID)
 	}
 
@@ -78,9 +80,15 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 	ps.WindowIndex = paneInfo.WindowIndex
 	ps.PaneIndex = paneInfo.PaneIndex
 	ps.TmuxSocket = paneInfo.SocketPath
+	ps.Agent = string(agentDef.Name)
 
-	// Determine new status
-	newStatus := applyStatusTransition(eventType, input, ps.Status)
+	// Determine new status via agent-specific or default transition
+	var newStatus state.Status
+	if agentDef.ApplyTransition != nil {
+		newStatus = agentDef.ApplyTransition(eventType, input, ps.Status)
+	} else {
+		newStatus = defaultStatusTransition(eventType, input, ps.Status)
+	}
 
 	// Update status_changed_at only if status actually changed
 	if newStatus != ps.Status {
@@ -92,9 +100,9 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 	ps.LastEvent = eventType
 	ps.LastEventAt = now
 
-	// Store notification message for waiting status
-	if eventType == "Notification" {
-		ps.Message = input.NotificationType
+	// Store message via agent-specific logic
+	if agentDef.StoreMessage != nil {
+		ps.Message = agentDef.StoreMessage(eventType, input)
 	} else {
 		ps.Message = ""
 	}
@@ -103,56 +111,22 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 		return err
 	}
 
-	// Send macOS notification for applicable events
-	if notifyCfg.Enabled {
-		switch eventType {
-		case "Notification":
-			body := extractNotificationContext(input.TranscriptPath)
+	// Send macOS notification if enabled and agent supports it
+	if notifyCfg.Enabled && agentDef.NotifyTitle != nil {
+		title := agentDef.NotifyTitle(eventType)
+		if title != "" {
+			body := ""
+			if agentDef.ExtractNotifyBody != nil {
+				body = agentDef.ExtractNotifyBody(eventType, input)
+			}
 			if body == "" {
 				body = input.Message
 			}
-			if body == "" {
-				body = input.NotificationType
-			}
-			sendNotification("Claude Code - 確認", body, paneInfo, notifyCfg)
-		case "Stop":
-			body := extractStopSummary(input.TranscriptPath)
-			sendNotification("Claude Code - 完了", body, paneInfo, notifyCfg)
+			sendNotification(title, body, paneInfo, notifyCfg)
 		}
 	}
 
 	return nil
-}
-
-// applyStatusTransition determines the new status based on event type.
-func applyStatusTransition(eventType string, input hookInput, current state.Status) state.Status {
-	switch eventType {
-	case "SessionStart":
-		return state.StatusRegistered
-
-	case "UserPromptSubmit":
-		return state.StatusRunning
-
-	case "PreToolUse":
-		return state.StatusRunning
-
-	case "Notification":
-		switch input.NotificationType {
-		case "permission_prompt", "elicitation_dialog":
-			return state.StatusWaiting
-		case "idle_prompt":
-			return state.StatusDone
-		default:
-			return state.StatusWaiting
-		}
-
-	case "Stop":
-		return state.StatusDone
-
-	default:
-		// Unknown event type; don't change status
-		return current
-	}
 }
 
 // getTmuxPaneInfo reads the current tmux pane information.

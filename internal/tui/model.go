@@ -103,7 +103,7 @@ func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 		}
 
 		now := time.Now()
-		var claudePanes []tmux.Pane
+		var agentPanes []tmux.Pane
 
 		// Build live pane set for stale cleanup
 		livePaneIDs := make(map[string]bool)
@@ -112,14 +112,15 @@ func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 		}
 
 		for i := range allPanes {
-			ps, isClaude := stateMap[allPanes[i].ID]
-			if !isClaude {
+			ps, isAgent := stateMap[allPanes[i].ID]
+			if !isAgent {
 				continue
 			}
 
 			allPanes[i].Status = mapStatus(ps.Status)
 			allPanes[i].Duration = now.Sub(ps.StatusChangedAt)
 			allPanes[i].Message = ps.Message
+			allPanes[i].Agent = ps.Agent
 
 			// Capture pane content for preview only (not for status detection)
 			lines, captureErr := c.CapturePaneContent(allPanes[i].ID, previewLines)
@@ -127,17 +128,17 @@ func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 				allPanes[i].Preview = lines
 			}
 
-			claudePanes = append(claudePanes, allPanes[i])
+			agentPanes = append(agentPanes, allPanes[i])
 		}
 
 		// Clean up stale state files for panes that no longer exist in tmux
 		store.RemoveStale(livePaneIDs)
 
-		return panesMsg{panes: claudePanes}
+		return panesMsg{panes: agentPanes}
 	}
 }
 
-// visiblePanes returns Claude-active panes, optionally filtered by text.
+// visiblePanes returns agent-active panes, optionally filtered by text.
 func (m Model) visiblePanes() []tmux.Pane {
 	var panes []tmux.Pane
 	for _, p := range m.allPanes {
