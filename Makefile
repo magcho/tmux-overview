@@ -2,9 +2,11 @@
 
 BINARY_NAME=tov
 BUILD_DIR=.
+VERSION ?= dev
+LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
 
 build:
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/tov
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/tov
 
 install: build
 	mkdir -p ~/.local/bin

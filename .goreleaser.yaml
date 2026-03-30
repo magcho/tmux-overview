@@ -1,0 +1,51 @@
+version: 2
+
+project_name: tov
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - main: ./cmd/tov
+    binary: tov
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+brews:
+  - repository:
+      owner: magcho
+      name: homebrew-magcho
+    name: tov
+    homepage: "https://github.com/magcho/tmux-overview"
+    description: "tmux overseer — TUI tool for monitoring all tmux panes with Claude Code status"
+    license: "MIT"
+    install: |
+      bin.install "tov"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/tov version")
