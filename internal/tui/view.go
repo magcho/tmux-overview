@@ -2,12 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/magcho/tmux-overview/internal/gitutil"
 	"github.com/magcho/tmux-overview/internal/tmux"
 )
 
@@ -179,7 +179,7 @@ func (m Model) viewPreview(width, innerHeight int) string {
 	lang := m.cfg.Display.Language
 
 	// 1-line summary: directory + status + duration
-	summary := detailTitleStyle.Render(filepath.Base(p.CWD)) + "  "
+	summary := detailTitleStyle.Render(gitutil.DisplayName(p.CWD)) + "  "
 	summary += styledStatusLabel(p.Status, lang)
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
 		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
@@ -218,7 +218,7 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 	lines = append(lines, listTitleStyle.Render("PANE LIST"))
 
 	// Column header
-	header := fmt.Sprintf("  %-24s %-16s %s", "DIRECTORY", "STATUS", "DURATION")
+	header := fmt.Sprintf("  %-38s %-16s %s", "DIRECTORY", "STATUS", "DURATION")
 	lines = append(lines, listHeaderStyle.Render(header))
 	colWidth := min(width-6, 60)
 	if colWidth < 40 {
@@ -297,9 +297,9 @@ func truncateLines(lines []string, maxLines int) string {
 }
 
 func formatPaneLine(p tmux.Pane, lang string) string {
-	dir := filepath.Base(p.CWD)
-	if ansi.StringWidth(dir) > 22 {
-		dir = ansi.Truncate(dir, 22, "…")
+	dir := gitutil.DisplayName(p.CWD)
+	if ansi.StringWidth(dir) > 36 {
+		dir = ansi.Truncate(dir, 36, "…")
 	}
 
 	statusStr := styledStatusLabel(p.Status, lang)
@@ -322,7 +322,7 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 		durationStr = "-"
 	}
 
-	return fmt.Sprintf("%-22s  %-16s  %s", dir, statusStr, durationStr)
+	return fmt.Sprintf("%-36s  %-16s  %s", dir, statusStr, durationStr)
 }
 
 func styledStatusLabel(s tmux.PaneStatus, lang string) string {
