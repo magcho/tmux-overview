@@ -24,4 +24,5 @@ type PaneState struct {
 	LastEvent       string    `json:"last_event"`
 	LastEventAt     time.Time `json:"last_event_at"`
 	Message         string    `json:"message,omitempty"`
+	TmuxSocket      string    `json:"tmux_socket,omitempty"`
 }

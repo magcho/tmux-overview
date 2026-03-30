@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Display DisplayConfig `toml:"display"`
 	Hook    HookConfig    `toml:"hook"`
+	Notify  NotifyConfig  `toml:"notify"`
 }
 
 type DisplayConfig struct {
@@ -24,6 +25,13 @@ type HookConfig struct {
 	StateDir string `toml:"state_dir"` // Override state directory (default: $TMPDIR/tov/)
 }
 
+type NotifyConfig struct {
+	Enabled     bool   `toml:"enabled"`      // Send macOS notifications (default: true)
+	TerminalApp string `toml:"terminal_app"` // Terminal app name (auto-detect from $TERM_PROGRAM if empty)
+	Sound       string `toml:"sound"`        // terminal-notifier -sound argument
+	Icon        string `toml:"icon"`         // Notification icon path
+}
+
 func DefaultConfig() Config {
 	return Config{
 		Display: DisplayConfig{
@@ -31,6 +39,9 @@ func DefaultConfig() Config {
 			PreviewLines: 10,
 			CWDMaxLength: 40,
 			Language:     "en",
+		},
+		Notify: NotifyConfig{
+			Enabled: true,
 		},
 	}
 }

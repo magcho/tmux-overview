@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/magcho/tmux-overview/internal/config"
 	"github.com/magcho/tmux-overview/internal/state"
 )
 
@@ -117,7 +118,8 @@ func TestHandleEventWithoutTmux(t *testing.T) {
 	t.Setenv("TMUX_PANE", "")
 
 	stdin := strings.NewReader(`{"session_id":"test"}`)
-	err := HandleEvent("PreToolUse", stdin, store)
+	notifyCfg := config.NotifyConfig{Enabled: false}
+	err := HandleEvent("PreToolUse", stdin, store, notifyCfg)
 	if err != nil {
 		t.Errorf("expected nil error without TMUX_PANE, got: %v", err)
 	}

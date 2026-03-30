@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/magcho/tmux-overview/internal/config"
 	"github.com/magcho/tmux-overview/internal/state"
 )
 
@@ -19,6 +20,8 @@ type hookInput struct {
 	CWD              string `json:"cwd"`
 	HookEventName    string `json:"hook_event_name"`
 	NotificationType string `json:"notification_type"`
+	TranscriptPath   string `json:"transcript_path"`
+	Message          string `json:"message"`
 }
 
 // tmuxPaneInfo holds pane metadata fetched from tmux.
@@ -27,10 +30,11 @@ type tmuxPaneInfo struct {
 	SessionName string
 	WindowIndex int
 	PaneIndex   int
+	SocketPath  string // tmux server socket path from $TMUX
 }
 
 // HandleEvent processes a Claude Code hook event and updates the pane state file.
-func HandleEvent(eventType string, stdin io.Reader, store *state.Store) error {
+func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCfg config.NotifyConfig) error {
 	var input hookInput
 	if err := json.NewDecoder(stdin).Decode(&input); err != nil {
 		// stdin may be empty for some events; treat as empty input
@@ -73,6 +77,7 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store) error {
 	ps.SessionName = paneInfo.SessionName
 	ps.WindowIndex = paneInfo.WindowIndex
 	ps.PaneIndex = paneInfo.PaneIndex
+	ps.TmuxSocket = paneInfo.SocketPath
 
 	// Determine new status
 	newStatus := applyStatusTransition(eventType, input, ps.Status)
@@ -94,7 +99,29 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store) error {
 		ps.Message = ""
 	}
 
-	return store.Write(ps)
+	if err := store.Write(ps); err != nil {
+		return err
+	}
+
+	// Send macOS notification for applicable events
+	if notifyCfg.Enabled {
+		switch eventType {
+		case "Notification":
+			body := extractNotificationContext(input.TranscriptPath)
+			if body == "" {
+				body = input.Message
+			}
+			if body == "" {
+				body = input.NotificationType
+			}
+			sendNotification("Claude Code - 確認", body, paneInfo, notifyCfg)
+		case "Stop":
+			body := extractStopSummary(input.TranscriptPath)
+			sendNotification("Claude Code - 完了", body, paneInfo, notifyCfg)
+		}
+	}
+
+	return nil
 }
 
 // applyStatusTransition determines the new status based on event type.
@@ -135,6 +162,16 @@ func getTmuxPaneInfo() (tmuxPaneInfo, error) {
 		return tmuxPaneInfo{}, fmt.Errorf("TMUX_PANE not set (not running inside tmux?)")
 	}
 
+	// Extract socket path from $TMUX (format: /path/to/socket,pid,session)
+	socketPath := ""
+	if tmuxEnv := os.Getenv("TMUX"); tmuxEnv != "" {
+		if idx := strings.IndexByte(tmuxEnv, ','); idx > 0 {
+			socketPath = tmuxEnv[:idx]
+		} else {
+			socketPath = tmuxEnv
+		}
+	}
+
 	// Get session name, window index, pane index from tmux
 	out, err := exec.Command("tmux", "display-message", "-t", paneID, "-p",
 		"#{session_name}\t#{window_index}\t#{pane_index}").Output()
@@ -155,5 +192,6 @@ func getTmuxPaneInfo() (tmuxPaneInfo, error) {
 		SessionName: parts[0],
 		WindowIndex: windowIdx,
 		PaneIndex:   paneIdx,
+		SocketPath:  socketPath,
 	}, nil
 }

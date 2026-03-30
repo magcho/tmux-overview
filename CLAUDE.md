@@ -27,18 +27,21 @@ tov setup           # Claude Code settings.jsonにフック設定を追加
 tov setup --dry-run # 変更プレビュー
 tov setup --remove  # フック設定を削除
 tov cleanup         # 終了済みペインのstale状態ファイルを削除
+tov focus           # 通知クリック時のtmuxペインフォーカス（内部用）
 ```
 
 ## Architecture
 
 bubbletea の Elm Architecture (Model → Update → View) に従った構成:
 
-- **`cmd/tov/main.go`** — エントリポイント。サブコマンドルーティング（hook/setup/cleanup）、TUI起動、終了後のペインジャンプ実行
+- **`cmd/tov/main.go`** — エントリポイント。サブコマンドルーティング（hook/setup/cleanup/focus）、TUI起動、終了後のペインジャンプ実行
 - **`internal/state/`** — ペインごとのJSON状態ファイル管理（`$TMPDIR/tov/`）
   - `types.go` — PaneState構造体、Status定数（registered/running/waiting/done）
   - `store.go` — 状態ファイルのアトミック書き込み・読み込み・一覧・削除・staleクリーンアップ
 - **`internal/hook/`** — Claude Codeライフサイクルフックの処理
-  - `handler.go` — フックイベント受信 → ステータス遷移 → 状態ファイル更新
+  - `handler.go` — フックイベント受信 → ステータス遷移 → 状態ファイル更新 → macOS通知送信
+  - `notify.go` — terminal-notifier呼び出し、トランスクリプト解析（tool_useコンテキスト/完了メッセージ抽出）
+  - `focus.go` — 通知クリック時のtmuxペインフォーカス（`open -a` + `tmux -S <socket> switch-client`）
   - `setup.go` — `~/.claude/settings.json` へのフック設定自動追加/削除
 - **`internal/tmux/`** — tmuxとのやり取りを `Client` インターフェースで抽象化
   - `client.go` — `tmux` コマンドのサブプロセス呼び出し（`list-panes -a`, `capture-pane -p` 等）
@@ -62,3 +65,5 @@ bubbletea の Elm Architecture (Model → Update → View) に従った構成:
 - エラーは `fmt.Errorf` でラップして上位に伝播（`log.Fatal` は main 以外では使わない）
 - View のレイアウト計算はターミナル高に基づく動的分配（listInner / previewInner）
 - stale状態ファイルはTUIポーリング時に自動クリーンアップ（tmuxペイン存在チェック）
+- **macOS通知**: Notification/Stopイベント時にterminal-notifierでデスクトップ通知。クリックで該当ペインにジャンプ
+- 通知クリック時のフォーカスは `tov focus` サブコマンドで処理（`tmux -S <socket>` でソケット指定）

@@ -28,6 +28,9 @@ func main() {
 		case "cleanup":
 			handleCleanup()
 			return
+		case "focus":
+			handleFocus()
+			return
 		}
 	}
 
@@ -44,7 +47,7 @@ func handleHook() {
 	cfg, _ := config.Load()
 	store := state.NewStore(cfg.Hook.StateDir)
 
-	if err := hook.HandleEvent(eventType, os.Stdin, store); err != nil {
+	if err := hook.HandleEvent(eventType, os.Stdin, store, cfg.Notify); err != nil {
 		fmt.Fprintf(os.Stderr, "tov hook: %v\n", err)
 		os.Exit(1)
 	}
@@ -59,6 +62,24 @@ func handleSetup() {
 
 	if err := hook.Setup(*dryRun, *remove); err != nil {
 		fmt.Fprintf(os.Stderr, "tov setup: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func handleFocus() {
+	fs := flag.NewFlagSet("focus", flag.ExitOnError)
+	socket := fs.String("socket", "", "tmux socket path")
+	target := fs.String("target", "", "tmux target (session:window.pane)")
+	app := fs.String("app", "", "terminal application name")
+	fs.Parse(os.Args[2:])
+
+	if *socket == "" || *target == "" {
+		fmt.Fprintln(os.Stderr, "Usage: tov focus --socket <path> --target <session:window.pane> [--app <name>]")
+		os.Exit(1)
+	}
+
+	if err := hook.FocusPane(*socket, *target, *app); err != nil {
+		fmt.Fprintf(os.Stderr, "tov focus: %v\n", err)
 		os.Exit(1)
 	}
 }
