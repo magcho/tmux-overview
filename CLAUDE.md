@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**tov** (tmux overseer) — tmuxの全セッション・ウィンドウ・ペインを一覧表示し、Claude Codeの実行状態を俯瞰しながら目的のペインへジャンプできるTUIツール。Go + bubbletea + lipgloss で構築。
+**tov** (tmux overseer) — tmuxの全セッション・ウィンドウ・ペインを一覧表示し、AIコーディングエージェント（Claude Code / Codex）の実行状態を俯瞰しながら目的のペインへジャンプできるTUIツール。Go + bubbletea + lipgloss で構築。
 
 ## Build & Run
 
@@ -21,13 +21,15 @@ go test ./internal/tui/ -run TestViewHeight24  # 単体テスト実行例
 ### サブコマンド
 
 ```bash
-tov                 # TUI起動（デフォルト）
-tov hook <Event>    # Claude Codeフックイベント処理（フックから自動呼出し）
-tov setup           # Claude Code settings.jsonにフック設定を追加
-tov setup --dry-run # 変更プレビュー
-tov setup --remove  # フック設定を削除
-tov cleanup         # 終了済みペインのstale状態ファイルを削除
-tov focus           # 通知クリック時のtmuxペインフォーカス（内部用）
+tov                          # TUI起動（デフォルト）
+tov hook <Event>             # フックイベント処理（エージェントから自動呼出し）
+tov setup                    # Claude Codeフック設定を追加（デフォルト）
+tov setup --agent codex      # Codexフック設定を追加
+tov setup --all              # 全エージェントにフック設定を追加
+tov setup --dry-run          # 変更プレビュー
+tov setup --remove           # フック設定を削除
+tov cleanup                  # 終了済みペインのstale状態ファイルを削除
+tov focus                    # 通知クリック時のtmuxペインフォーカス（内部用）
 ```
 
 ## Architecture
@@ -38,11 +40,14 @@ bubbletea の Elm Architecture (Model → Update → View) に従った構成:
 - **`internal/state/`** — ペインごとのJSON状態ファイル管理（`$TMPDIR/tov/`）
   - `types.go` — PaneState構造体、Status定数（registered/running/waiting/done）
   - `store.go` — 状態ファイルのアトミック書き込み・読み込み・一覧・削除・staleクリーンアップ
-- **`internal/hook/`** — Claude Codeライフサイクルフックの処理
-  - `handler.go` — フックイベント受信 → ステータス遷移 → 状態ファイル更新 → macOS通知送信
+- **`internal/hook/`** — エージェントライフサイクルフックの処理（マルチエージェント対応）
+  - `agent.go` — AgentDef構造体、エージェントレジストリ、環境変数ベースのエージェント自動検出
+  - `agent_claude.go` — Claude Code固有の定義（Notification→waiting、SessionEnd→削除、トランスクリプト解析通知）
+  - `agent_codex.go` — Codex固有の定義（`~/.codex/hooks.json`、matcher: null）
+  - `handler.go` — フックイベント受信 → AgentDefベースのステータス遷移 → 状態ファイル更新 → macOS通知送信
   - `notify.go` — terminal-notifier呼び出し、トランスクリプト解析（tool_useコンテキスト/完了メッセージ抽出）
   - `focus.go` — 通知クリック時のtmuxペインフォーカス（`open -a` + `tmux -S <socket> switch-client`）
-  - `setup.go` — `~/.claude/settings.json` へのフック設定自動追加/削除
+  - `setup.go` — マルチエージェント対応のフック設定自動追加/削除（共通ユーティリティ）
 - **`internal/tmux/`** — tmuxとのやり取りを `Client` インターフェースで抽象化
   - `client.go` — `tmux` コマンドのサブプロセス呼び出し（`list-panes -a`, `capture-pane -p` 等）
   - `session.go` — Session / Window / Pane 構造体、PaneStatus enum
@@ -56,8 +61,10 @@ bubbletea の Elm Architecture (Model → Update → View) に従った構成:
 
 ## Key Design Decisions
 
-- **ステータス検出はClaude Codeフックベース**: capture-pane正規表現ではなく、Claude Codeのライフサイクルフック（SessionStart, UserPromptSubmit, PreToolUse, Notification, Stop, SessionEnd）でステータスを取得
-- **状態管理はペインごとのJSONファイル**: `$TMPDIR/tov/%ID.json` にアトミック書き込み（temp+rename）。ファイルロック不要
+- **マルチエージェント対応のAgentDefレジストリ**: `internal/hook/agent.go`で各エージェントの差異（イベント集合、設定ファイル形式、ステータス遷移）をAgentDef構造体で定義。新エージェント追加は1ファイル追加+レジストリ登録のみ
+- **環境変数による自動エージェント検出**: `$CODEX_THREAD_ID`でCodex、それ以外はClaude Code（後方互換）
+- **ステータス検出はエージェントフックベース**: capture-pane正規表現ではなく、各エージェントのライフサイクルフックでステータスを取得
+- **状態管理はペインごとのJSONファイル**: `$TMPDIR/tov/%ID.json` にアトミック書き込み（temp+rename）。ファイルロック不要。Agent名を記録
 - tmuxコマンド呼び出しは全て `internal/tmux/client.go` の `runTmux()` に集約
 - `capture-pane` はプレビュー表示用にのみ使用（ステータス検出には使わない）
 - `tea.Tick` による2秒間隔の自動更新（configurable）

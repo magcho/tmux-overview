@@ -139,7 +139,7 @@ func (m Model) viewHeader(width int) string {
 	}
 
 	visible := m.visiblePanes()
-	stats := fmt.Sprintf("Claude: %d panes", len(visible))
+	stats := fmt.Sprintf("Agent: %d panes", len(visible))
 	if len(visible) != len(m.allPanes) {
 		stats += fmt.Sprintf(" / %d total", len(m.allPanes))
 	}
@@ -232,7 +232,7 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 		if len(m.allPanes) == 0 {
 			lines = append(lines, statsStyle.Render("  No tmux panes found."))
 		} else {
-			lines = append(lines, statsStyle.Render("  No Claude panes found."))
+			lines = append(lines, statsStyle.Render("  No agent panes found."))
 		}
 	}
 

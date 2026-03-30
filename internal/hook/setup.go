@@ -6,63 +6,64 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
-// tovHookEvents lists the Claude Code hook events that tov needs.
-var tovHookEvents = []string{
-	"SessionStart",
-	"UserPromptSubmit",
-	"PreToolUse",
-	"Notification",
-	"Stop",
-	"SessionEnd",
-}
-
-// Setup adds or removes tov hooks from ~/.claude/settings.json.
-func Setup(dryRun bool, remove bool) error {
-	settingsPath, err := claudeSettingsPath()
-	if err != nil {
-		return err
-	}
-
-	settings, err := readSettings(settingsPath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading settings: %w", err)
-	}
-	if settings == nil {
-		settings = make(map[string]interface{})
-	}
-
+// Setup adds or removes tov hooks for the specified agents.
+func Setup(agents []AgentName, dryRun bool, remove bool) error {
 	tovCmd, err := tovBinaryPath()
 	if err != nil {
 		return err
 	}
 
-	if remove {
-		removeTovHooks(settings, tovCmd)
-		fmt.Println("Removing tov hooks from", settingsPath)
-	} else {
-		addTovHooks(settings, tovCmd)
-		fmt.Println("Adding tov hooks to", settingsPath)
+	for _, agentName := range agents {
+		agentDef, ok := GetAgent(agentName)
+		if !ok {
+			return fmt.Errorf("unknown agent: %s", agentName)
+		}
+
+		settingsPath, err := agentDef.SettingsPath()
+		if err != nil {
+			return fmt.Errorf("getting settings path for %s: %w", agentDef.DisplayLabel, err)
+		}
+
+		var settings map[string]interface{}
+		if remove {
+			if agentDef.RemoveHooks == nil {
+				continue
+			}
+			settings, err = agentDef.RemoveHooks(settingsPath, tovCmd)
+			if err != nil {
+				return fmt.Errorf("removing hooks for %s: %w", agentDef.DisplayLabel, err)
+			}
+			fmt.Printf("Removing tov hooks from %s (%s)\n", agentDef.DisplayLabel, settingsPath)
+		} else {
+			if agentDef.SetupHooks == nil {
+				continue
+			}
+			settings, err = agentDef.SetupHooks(settingsPath, tovCmd)
+			if err != nil {
+				return fmt.Errorf("adding hooks for %s: %w", agentDef.DisplayLabel, err)
+			}
+			fmt.Printf("Adding tov hooks to %s (%s)\n", agentDef.DisplayLabel, settingsPath)
+		}
+
+		if dryRun {
+			out, _ := json.MarshalIndent(settings, "", "  ")
+			fmt.Printf("\n--- Preview (%s) ---\n", settingsPath)
+			fmt.Println(string(out))
+			continue
+		}
+
+		if err := writeSettings(settingsPath, settings); err != nil {
+			return fmt.Errorf("writing settings for %s: %w", agentDef.DisplayLabel, err)
+		}
 	}
 
-	if dryRun {
-		out, _ := json.MarshalIndent(settings, "", "  ")
-		fmt.Println("\n--- Preview ---")
-		fmt.Println(string(out))
-		return nil
-	}
-
-	return writeSettings(settingsPath, settings)
+	return nil
 }
 
-func claudeSettingsPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("getting home dir: %w", err)
-	}
-	return filepath.Join(home, ".claude", "settings.json"), nil
-}
+// === Shared utilities for setup ===
 
 func readSettings(path string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(path)
@@ -108,90 +109,81 @@ func tovBinaryPath() (string, error) {
 	return exe, nil
 }
 
-func addTovHooks(settings map[string]interface{}, tovCmd string) {
-	hooks, ok := settings["hooks"].(map[string]interface{})
-	if !ok {
-		hooks = make(map[string]interface{})
-		settings["hooks"] = hooks
+// addHookEntry adds a tov hook entry to a hooks map for a given event.
+// matcherValue is the JSON value for the "matcher" field ("" for Claude, nil for Codex).
+func addHookEntry(hooks map[string]interface{}, event, tovCmd string, matcherValue interface{}, extraFields map[string]interface{}) {
+	command := fmt.Sprintf("%s hook %s", tovCmd, event)
+	newHook := map[string]interface{}{
+		"type":    "command",
+		"command": command,
+		"timeout": 5,
+	}
+	for k, v := range extraFields {
+		newHook[k] = v
 	}
 
-	for _, event := range tovHookEvents {
-		command := fmt.Sprintf("%s hook %s", tovCmd, event)
-		newHook := map[string]interface{}{
-			"type":    "command",
-			"command": command,
-			"timeout": 5,
-		}
-
-		eventHooks, ok := hooks[event].([]interface{})
-		if !ok {
-			// No existing hooks for this event; create new entry
-			hooks[event] = []interface{}{
-				map[string]interface{}{
-					"matcher": "",
-					"hooks":   []interface{}{newHook},
-				},
-			}
-			continue
-		}
-
-		// Check if tov hook already exists in any matcher group
-		if hasTovHook(eventHooks, tovCmd) {
-			continue
-		}
-
-		// Append tov hook to the first matcher group, or create a new one
-		if len(eventHooks) > 0 {
-			if group, ok := eventHooks[0].(map[string]interface{}); ok {
-				if groupHooks, ok := group["hooks"].([]interface{}); ok {
-					group["hooks"] = append(groupHooks, newHook)
-				}
-			}
-		} else {
-			hooks[event] = append(eventHooks, map[string]interface{}{
-				"matcher": "",
+	eventHooks, ok := hooks[event].([]interface{})
+	if !ok {
+		// No existing hooks for this event; create new entry
+		hooks[event] = []interface{}{
+			map[string]interface{}{
+				"matcher": matcherValue,
 				"hooks":   []interface{}{newHook},
-			})
+			},
 		}
+		return
+	}
+
+	// Check if tov hook already exists in any matcher group
+	if hasTovHook(eventHooks, tovCmd) {
+		return
+	}
+
+	// Append tov hook to the first matcher group, or create a new one
+	if len(eventHooks) > 0 {
+		if group, ok := eventHooks[0].(map[string]interface{}); ok {
+			if groupHooks, ok := group["hooks"].([]interface{}); ok {
+				group["hooks"] = append(groupHooks, newHook)
+			}
+		}
+	} else {
+		hooks[event] = append(eventHooks, map[string]interface{}{
+			"matcher": matcherValue,
+			"hooks":   []interface{}{newHook},
+		})
 	}
 }
 
-func removeTovHooks(settings map[string]interface{}, tovCmd string) {
-	hooks, ok := settings["hooks"].(map[string]interface{})
+// removeHookEntry removes tov hook entries from a hooks map for a given event.
+func removeHookEntry(hooks map[string]interface{}, event, tovCmd string) {
+	eventHooks, ok := hooks[event].([]interface{})
 	if !ok {
 		return
 	}
 
-	for _, event := range tovHookEvents {
-		eventHooks, ok := hooks[event].([]interface{})
+	for _, matcherGroup := range eventHooks {
+		group, ok := matcherGroup.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		groupHooks, ok := group["hooks"].([]interface{})
 		if !ok {
 			continue
 		}
 
-		for _, matcherGroup := range eventHooks {
-			group, ok := matcherGroup.(map[string]interface{})
+		var filtered []interface{}
+		for _, h := range groupHooks {
+			hookMap, ok := h.(map[string]interface{})
 			if !ok {
+				filtered = append(filtered, h)
 				continue
 			}
-			groupHooks, ok := group["hooks"].([]interface{})
-			if !ok {
-				continue
+			cmd, _ := hookMap["command"].(string)
+			if !isTovCommand(cmd, tovCmd) {
+				filtered = append(filtered, h)
 			}
-
-			var filtered []interface{}
-			for _, h := range groupHooks {
-				hookMap, ok := h.(map[string]interface{})
-				if !ok {
-					filtered = append(filtered, h)
-					continue
-				}
-				cmd, _ := hookMap["command"].(string)
-				if !isTovCommand(cmd, tovCmd) {
-					filtered = append(filtered, h)
-				}
-			}
-			group["hooks"] = filtered
 		}
+		group["hooks"] = filtered
 	}
 }
 
@@ -220,10 +212,5 @@ func hasTovHook(eventHooks []interface{}, tovCmd string) bool {
 }
 
 func isTovCommand(cmd string, tovCmd string) bool {
-	return len(cmd) >= 8 && (cmd == tovCmd+" hook SessionStart" ||
-		cmd == tovCmd+" hook UserPromptSubmit" ||
-		cmd == tovCmd+" hook PreToolUse" ||
-		cmd == tovCmd+" hook Notification" ||
-		cmd == tovCmd+" hook Stop" ||
-		cmd == tovCmd+" hook SessionEnd")
+	return strings.Contains(cmd, tovCmd+" hook ") || strings.HasSuffix(cmd, tovCmd+" hook")
 }

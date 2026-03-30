@@ -40,22 +40,25 @@ func main() {
 	runTUI()
 }
 
-const version = "2.0.0"
+const version = "2.1.0"
 
 func printHelp() {
 	fmt.Printf(`tov (tmux overseer) v%s
 
-tmuxの全ペインを一覧表示し、Claude Codeの実行状態を俯瞰できるTUIツール。
+tmuxの全ペインを一覧表示し、AIコーディングエージェントの実行状態を俯瞰できるTUIツール。
+対応エージェント: Claude Code, Codex
 
 Usage:
   tov                       TUI起動
   tov help                  このヘルプを表示
-  tov setup [flags]         Claude Codeフック設定をインストール
+  tov setup [flags]         フック設定をインストール
   tov cleanup               終了済みペインのstale状態ファイルを削除
-  tov hook <Event>          フックイベント処理（Claude Codeから自動呼出し）
+  tov hook <Event>          フックイベント処理（エージェントから自動呼出し）
   tov focus [flags]         tmuxペインにフォーカス（通知クリック時の内部用）
 
 Setup flags:
+  --agent <name>            対象エージェント: claude, codex（デフォルト: claude）
+  --all                     全対応エージェントに設定
   --dry-run                 変更をプレビュー（書き込みなし）
   --remove                  tov フック設定を削除
 
@@ -97,9 +100,23 @@ func handleSetup() {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "Preview changes without writing")
 	remove := fs.Bool("remove", false, "Remove tov hooks from settings")
+	agentFlag := fs.String("agent", "", "Target agent: claude, codex (default: claude)")
+	allFlag := fs.Bool("all", false, "Setup hooks for all supported agents")
 	fs.Parse(os.Args[2:])
 
-	if err := hook.Setup(*dryRun, *remove); err != nil {
+	var agents []hook.AgentName
+	switch {
+	case *allFlag:
+		for _, a := range hook.AllAgents() {
+			agents = append(agents, a.Name)
+		}
+	case *agentFlag != "":
+		agents = []hook.AgentName{hook.AgentName(*agentFlag)}
+	default:
+		agents = []hook.AgentName{hook.AgentClaude}
+	}
+
+	if err := hook.Setup(agents, *dryRun, *remove); err != nil {
 		fmt.Fprintf(os.Stderr, "tov setup: %v\n", err)
 		os.Exit(1)
 	}

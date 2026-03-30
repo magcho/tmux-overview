@@ -70,7 +70,7 @@ func TestVisiblePanesFiltering(t *testing.T) {
 	visible := m.visiblePanes()
 	// Should show Running(2) + Done(1) + Error(1) = 4 panes
 	if len(visible) != 4 {
-		t.Errorf("expected 4 visible Claude panes, got %d", len(visible))
+		t.Errorf("expected 4 visible agent panes, got %d", len(visible))
 	}
 	for _, p := range visible {
 		if p.Status == tmux.StatusIdle || p.Status == tmux.StatusUnknown {

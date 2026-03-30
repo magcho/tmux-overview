@@ -84,6 +84,7 @@ type Pane struct {
 	Duration     time.Duration // Time since status changed
 	Preview      []string
 	Message      string // Notification message (for waiting status)
+	Agent        string // "claude", "codex", etc. Set from state file.
 	SessionName  string
 	WindowIndex  int
 	WindowName   string
