@@ -9,11 +9,87 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/magcho/tmux-overview/internal/config"
+	"github.com/magcho/tmux-overview/internal/hook"
+	"github.com/magcho/tmux-overview/internal/state"
 	"github.com/magcho/tmux-overview/internal/tmux"
 	"github.com/magcho/tmux-overview/internal/tui"
 )
 
 func main() {
+	// Subcommand routing (before flag.Parse)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "hook":
+			handleHook()
+			return
+		case "setup":
+			handleSetup()
+			return
+		case "cleanup":
+			handleCleanup()
+			return
+		}
+	}
+
+	runTUI()
+}
+
+func handleHook() {
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "Usage: tov hook <EventType>")
+		os.Exit(1)
+	}
+	eventType := os.Args[2]
+
+	cfg, _ := config.Load()
+	store := state.NewStore(cfg.Hook.StateDir)
+
+	if err := hook.HandleEvent(eventType, os.Stdin, store); err != nil {
+		fmt.Fprintf(os.Stderr, "tov hook: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func handleSetup() {
+	// Parse setup flags
+	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	dryRun := fs.Bool("dry-run", false, "Preview changes without writing")
+	remove := fs.Bool("remove", false, "Remove tov hooks from settings")
+	fs.Parse(os.Args[2:])
+
+	if err := hook.Setup(*dryRun, *remove); err != nil {
+		fmt.Fprintf(os.Stderr, "tov setup: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func handleCleanup() {
+	cfg, _ := config.Load()
+	store := state.NewStore(cfg.Hook.StateDir)
+
+	// Get live tmux panes
+	if _, err := exec.LookPath("tmux"); err != nil {
+		fmt.Fprintln(os.Stderr, "Error: tmux is not installed or not in PATH")
+		os.Exit(1)
+	}
+
+	client := tmux.NewClient()
+	panes, err := client.ListAllPanes()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing panes: %v\n", err)
+		os.Exit(1)
+	}
+
+	livePaneIDs := make(map[string]bool)
+	for _, p := range panes {
+		livePaneIDs[p.ID] = true
+	}
+
+	removed := store.RemoveStale(livePaneIDs)
+	fmt.Printf("Removed %d stale state file(s)\n", removed)
+}
+
+func runTUI() {
 	// CLI flags
 	intervalFlag := flag.Int("interval", 0, "Auto-refresh interval in seconds (overrides config)")
 	flag.Parse()
@@ -36,20 +112,9 @@ func main() {
 		cfg.Display.Interval = *intervalFlag
 	}
 
-	// Create status detector with config patterns
-	var detector *tmux.StatusDetector
-	if len(cfg.Status.RunningPatterns) > 0 || len(cfg.Status.DonePatterns) > 0 || len(cfg.Status.ErrorPatterns) > 0 {
-		detector = tmux.NewStatusDetectorWithPatterns(
-			cfg.Status.RunningPatterns,
-			cfg.Status.DonePatterns,
-			cfg.Status.ErrorPatterns,
-		)
-	} else {
-		detector = tmux.NewStatusDetector()
-	}
-
 	client := tmux.NewClient()
-	model := tui.NewModel(client, detector, cfg)
+	store := state.NewStore(cfg.Hook.StateDir)
+	model := tui.NewModel(client, store, cfg)
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	finalModel, err := p.Run()

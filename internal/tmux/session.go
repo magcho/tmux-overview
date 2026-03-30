@@ -7,6 +7,7 @@ type PaneStatus int
 
 const (
 	StatusUnknown PaneStatus = iota
+	StatusRegistered
 	StatusRunning
 	StatusDone
 	StatusWaiting
@@ -16,6 +17,8 @@ const (
 
 func (s PaneStatus) String() string {
 	switch s {
+	case StatusRegistered:
+		return "📋 Registered"
 	case StatusRunning:
 		return "🤖 Running"
 	case StatusDone:
@@ -34,6 +37,8 @@ func (s PaneStatus) String() string {
 // JapaneseLabel returns the status label in Japanese.
 func (s PaneStatus) JapaneseLabel() string {
 	switch s {
+	case StatusRegistered:
+		return "📋 起動中"
 	case StatusRunning:
 		return "🤖 処理中"
 	case StatusDone:
@@ -68,21 +73,21 @@ type Window struct {
 }
 
 type Pane struct {
-	ID            string // e.g. %23
-	Index         int
-	CWD           string
-	PID           int
-	Width         int
-	Height        int
-	Active        bool
-	Status        PaneStatus
-	Duration      time.Duration
-	WaitDuration  time.Duration
-	Preview       []string
-	SessionName   string
-	WindowIndex   int
-	WindowName    string
-	WindowActive  bool
+	ID           string // e.g. %23
+	Index        int
+	CWD          string
+	PID          int
+	Width        int
+	Height       int
+	Active       bool
+	Status       PaneStatus
+	Duration     time.Duration // Time since status changed
+	Preview      []string
+	Message      string // Notification message (for waiting status)
+	SessionName  string
+	WindowIndex  int
+	WindowName   string
+	WindowActive bool
 }
 
 // FlatLabel returns a display string like "work:1:biwa-frontend"

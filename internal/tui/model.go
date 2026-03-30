@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/magcho/tmux-overview/internal/config"
+	"github.com/magcho/tmux-overview/internal/state"
 	"github.com/magcho/tmux-overview/internal/tmux"
 )
 
@@ -17,9 +18,9 @@ type panesMsg struct {
 }
 
 type Model struct {
-	client   tmux.Client
-	detector *tmux.StatusDetector
-	cfg      config.Config
+	client tmux.Client
+	store  *state.Store
+	cfg    config.Config
 
 	allPanes []tmux.Pane
 
@@ -33,9 +34,6 @@ type Model struct {
 	// Preview
 	previewExpanded bool
 
-	// Running duration tracking: paneID -> first seen running time
-	runningStartTimes map[string]time.Time
-
 	// Terminal size
 	width  int
 	height int
@@ -48,13 +46,12 @@ type Model struct {
 	quitting bool
 }
 
-func NewModel(client tmux.Client, detector *tmux.StatusDetector, cfg config.Config) Model {
+func NewModel(client tmux.Client, store *state.Store, cfg config.Config) Model {
 	return Model{
-		client:            client,
-		detector:          detector,
-		cfg:               cfg,
-		previewExpanded:   true,
-		runningStartTimes: make(map[string]time.Time),
+		client:          client,
+		store:           store,
+		cfg:             cfg,
+		previewExpanded: true,
 	}
 }
 
@@ -64,7 +61,7 @@ func (m Model) JumpPane() *tmux.Pane {
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		fetchPanes(m.client, m.detector, m.cfg.Display.PreviewLines),
+		fetchPanes(m.client, m.store, m.cfg.Display.PreviewLines),
 		tickCmd(time.Duration(m.cfg.Display.Interval)*time.Second),
 	)
 }
@@ -75,50 +72,77 @@ func tickCmd(interval time.Duration) tea.Cmd {
 	})
 }
 
-func fetchPanes(c tmux.Client, detector *tmux.StatusDetector, previewLines int) tea.Cmd {
+// mapStatus converts a state.Status to a tmux.PaneStatus.
+func mapStatus(s state.Status) tmux.PaneStatus {
+	switch s {
+	case state.StatusRegistered:
+		return tmux.StatusRegistered
+	case state.StatusRunning:
+		return tmux.StatusRunning
+	case state.StatusWaiting:
+		return tmux.StatusWaiting
+	case state.StatusDone:
+		return tmux.StatusDone
+	default:
+		return tmux.StatusUnknown
+	}
+}
+
+func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 	return func() tea.Msg {
-		panes, err := c.ListAllPanes()
+		allPanes, err := c.ListAllPanes()
 		if err != nil {
 			return panesMsg{err: err}
 		}
 
-		// Scan hook-generated pane files to identify Claude panes.
-		// Returns map of pane coord key -> most recent hook mtime.
-		claudeFiles := tmux.ScanClaudePaneFiles()
-
-		now := time.Now()
-		for i := range panes {
-			hookTime := tmux.LookupPaneTime(panes[i], claudeFiles)
-
-			if claudeFiles != nil && hookTime.IsZero() {
-				// Not a Claude pane candidate — skip capture for efficiency
-				panes[i].Status = tmux.StatusIdle
-				continue
-			}
-
-			lines, captureErr := c.CapturePaneContent(panes[i].ID, previewLines)
-			if captureErr != nil {
-				panes[i].Status = tmux.StatusUnknown
-				continue
-			}
-			panes[i].Preview = lines
-			panes[i].Status = detector.Detect(lines)
-
-			// For Done/Waiting panes, compute WaitDuration from hook file mtime
-			if (panes[i].Status == tmux.StatusDone || panes[i].Status == tmux.StatusWaiting) && !hookTime.IsZero() {
-				panes[i].WaitDuration = now.Sub(hookTime)
-			}
+		// Read all hook state files
+		states, _ := store.ListAll()
+		stateMap := make(map[string]state.PaneState)
+		for _, s := range states {
+			stateMap[s.PaneID] = s
 		}
 
-		return panesMsg{panes: panes}
+		now := time.Now()
+		var claudePanes []tmux.Pane
+
+		// Build live pane set for stale cleanup
+		livePaneIDs := make(map[string]bool)
+		for _, p := range allPanes {
+			livePaneIDs[p.ID] = true
+		}
+
+		for i := range allPanes {
+			ps, isClaude := stateMap[allPanes[i].ID]
+			if !isClaude {
+				continue
+			}
+
+			allPanes[i].Status = mapStatus(ps.Status)
+			allPanes[i].Duration = now.Sub(ps.StatusChangedAt)
+			allPanes[i].Message = ps.Message
+
+			// Capture pane content for preview only (not for status detection)
+			lines, captureErr := c.CapturePaneContent(allPanes[i].ID, previewLines)
+			if captureErr == nil {
+				allPanes[i].Preview = lines
+			}
+
+			claudePanes = append(claudePanes, allPanes[i])
+		}
+
+		// Clean up stale state files for panes that no longer exist in tmux
+		store.RemoveStale(livePaneIDs)
+
+		return panesMsg{panes: claudePanes}
 	}
 }
 
-// visiblePanes returns only Claude-active panes (Running/Done/Error), optionally filtered by text.
+// visiblePanes returns Claude-active panes, optionally filtered by text.
 func (m Model) visiblePanes() []tmux.Pane {
 	var panes []tmux.Pane
 	for _, p := range m.allPanes {
-		if p.Status == tmux.StatusRunning || p.Status == tmux.StatusDone || p.Status == tmux.StatusWaiting || p.Status == tmux.StatusError {
+		switch p.Status {
+		case tmux.StatusRegistered, tmux.StatusRunning, tmux.StatusDone, tmux.StatusWaiting, tmux.StatusError:
 			panes = append(panes, p)
 		}
 	}
@@ -138,33 +162,4 @@ func (m Model) selectedPane() *tmux.Pane {
 		return &p
 	}
 	return nil
-}
-
-// updateDurations updates running start times and sets Duration on panes.
-// WaitDuration for Done panes is computed from hook file mtime in fetchPanes.
-func (m *Model) updateDurations() {
-	now := time.Now()
-	activeRunning := make(map[string]bool)
-
-	for i := range m.allPanes {
-		p := &m.allPanes[i]
-		if p.Status == tmux.StatusRunning {
-			activeRunning[p.ID] = true
-			if startTime, exists := m.runningStartTimes[p.ID]; exists {
-				p.Duration = now.Sub(startTime)
-			} else {
-				m.runningStartTimes[p.ID] = now
-				p.Duration = 0
-			}
-		} else {
-			p.Duration = 0
-		}
-	}
-
-	// Clean up panes that are no longer running
-	for id := range m.runningStartTimes {
-		if !activeRunning[id] {
-			delete(m.runningStartTimes, id)
-		}
-	}
 }

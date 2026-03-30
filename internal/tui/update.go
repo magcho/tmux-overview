@@ -17,7 +17,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		interval := time.Duration(m.cfg.Display.Interval) * time.Second
 		return m, tea.Batch(
-			fetchPanes(m.client, m.detector, m.cfg.Display.PreviewLines),
+			fetchPanes(m.client, m.store, m.cfg.Display.PreviewLines),
 			tickCmd(interval),
 		)
 
@@ -28,7 +28,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.allPanes = msg.panes
-		m.updateDurations()
 
 		// Keep cursor in bounds
 		visible := m.visiblePanes()
@@ -80,7 +79,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterMode = true
 
 	case keyRefresh:
-		return m, fetchPanes(m.client, m.detector, m.cfg.Display.PreviewLines)
+		return m, fetchPanes(m.client, m.store, m.cfg.Display.PreviewLines)
 
 	case keySpace:
 		m.previewExpanded = !m.previewExpanded

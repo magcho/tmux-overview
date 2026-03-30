@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/magcho/tmux-overview/internal/config"
+	"github.com/magcho/tmux-overview/internal/state"
 	"github.com/magcho/tmux-overview/internal/tmux"
 )
 
@@ -21,19 +22,17 @@ func (c *mockClient) IsInsideTmux() bool                                        
 func testPanes() []tmux.Pane {
 	return []tmux.Pane{
 		{ID: "%21", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusRunning, Duration: 42 * time.Second, Width: 220, Height: 50, PID: 48291, Active: true, WindowActive: true, Preview: []string{"> Analyzing component tree...", "✓ Updated Button.tsx", "✓ Updated index.ts", "■ Writing tests..."}},
-		{ID: "%22", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusDone, WaitDuration: 15 * time.Second, Width: 110, Height: 25, PID: 48292, Preview: []string{"✓ Task completed"}},
-		{ID: "%23", SessionName: "work", WindowIndex: 2, WindowName: "api-server", CWD: "/Users/test/src/api-server", Status: tmux.StatusIdle, Width: 110, Height: 25, PID: 48293},
+		{ID: "%22", SessionName: "work", WindowIndex: 1, WindowName: "frontend", CWD: "/Users/test/src/frontend", Status: tmux.StatusDone, Duration: 15 * time.Second, Width: 110, Height: 25, PID: 48292, Preview: []string{"✓ Task completed"}},
 		{ID: "%31", SessionName: "dev", WindowIndex: 1, WindowName: "dashboard", CWD: "/Users/test/src/dashboard", Status: tmux.StatusRunning, Duration: 120 * time.Second, Width: 110, Height: 25, PID: 48301, Preview: []string{"Reading files...", "Thinking..."}},
 		{ID: "%38", SessionName: "dev", WindowIndex: 2, WindowName: "infra", CWD: "/Users/test/src/infra", Status: tmux.StatusError, Width: 110, Height: 25, PID: 48302, Preview: []string{"Error: connection refused"}},
-		{ID: "%45", SessionName: "misc", WindowIndex: 1, WindowName: "scratch", CWD: "/Users/test/scratch", Status: tmux.StatusIdle, Width: 80, Height: 24, PID: 48401},
-		{ID: "%46", SessionName: "misc", WindowIndex: 2, WindowName: "notes", CWD: "/Users/test/notes", Status: tmux.StatusUnknown, Width: 80, Height: 24, PID: 48402},
 	}
 }
 
-func testModel(width, height int) Model {
+func testModel(t *testing.T, width, height int) Model {
+	t.Helper()
 	cfg := config.DefaultConfig()
-	detector := tmux.NewStatusDetector()
-	m := NewModel(&mockClient{}, detector, cfg)
+	store := state.NewStore(t.TempDir())
+	m := NewModel(&mockClient{}, store, cfg)
 	m.width = width
 	m.height = height
 	m.allPanes = testPanes()
@@ -41,41 +40,41 @@ func testModel(width, height int) Model {
 }
 
 func TestViewHeight24(t *testing.T) {
-	m := testModel(120, 24)
+	m := testModel(t, 120, 24)
 	checkViewFits(t, m, "24-line terminal")
 }
 
 func TestViewHeight40(t *testing.T) {
-	m := testModel(120, 40)
+	m := testModel(t, 120, 40)
 	checkViewFits(t, m, "40-line terminal (preview should appear)")
 }
 
 func TestViewHeight50(t *testing.T) {
-	m := testModel(120, 50)
+	m := testModel(t, 120, 50)
 	checkViewFits(t, m, "50-line terminal (large)")
 }
 
 func TestViewHeightSmall(t *testing.T) {
-	m := testModel(80, 15)
+	m := testModel(t, 80, 15)
 	checkViewFits(t, m, "15-line terminal (small)")
 }
 
 func TestViewPreviewCollapsed(t *testing.T) {
-	m := testModel(120, 24)
+	m := testModel(t, 120, 24)
 	m.previewExpanded = false
 	checkViewFits(t, m, "24-line collapsed preview")
 }
 
 func TestVisiblePanesFiltering(t *testing.T) {
-	m := testModel(120, 24)
+	m := testModel(t, 120, 24)
 	visible := m.visiblePanes()
-	// Should show only Running(2) + Done(1) + Error(1) = 4 panes, not Idle(2) or Unknown(1)
+	// Should show Running(2) + Done(1) + Error(1) = 4 panes
 	if len(visible) != 4 {
 		t.Errorf("expected 4 visible Claude panes, got %d", len(visible))
 	}
 	for _, p := range visible {
 		if p.Status == tmux.StatusIdle || p.Status == tmux.StatusUnknown {
-			t.Errorf("non-Claude pane %s with status %s should be filtered out", p.ID, p.Status)
+			t.Errorf("pane %s with status %s should be filtered out", p.ID, p.Status)
 		}
 	}
 }

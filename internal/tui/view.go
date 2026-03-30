@@ -56,11 +56,12 @@ var (
 			BorderForeground(lipgloss.Color("75"))
 
 	// Status styles
-	statusRunningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	statusDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	statusWaitingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
-	statusErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	statusUnknownStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	statusRegisteredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	statusRunningStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	statusDoneStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	statusWaitingStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
+	statusErrorStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	statusUnknownStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
 	// Footer
 	footerStyle = lipgloss.NewStyle().
@@ -183,8 +184,8 @@ func (m Model) viewPreview(width, innerHeight int) string {
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
 		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
 	}
-	if (p.Status == tmux.StatusDone || p.Status == tmux.StatusWaiting) && p.WaitDuration > 0 {
-		summary += fmt.Sprintf("  (%s)", formatDuration(p.WaitDuration))
+	if (p.Status == tmux.StatusDone || p.Status == tmux.StatusWaiting) && p.Duration > 0 {
+		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
 	}
 	summary += "  " + statsStyle.Render(abbreviateHome(p.CWD))
 	lines = append(lines, summary)
@@ -312,8 +313,8 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 			durationStr = "0s"
 		}
 	case tmux.StatusDone, tmux.StatusWaiting:
-		if p.WaitDuration > 0 {
-			durationStr = formatDuration(p.WaitDuration)
+		if p.Duration > 0 {
+			durationStr = formatDuration(p.Duration)
 		} else {
 			durationStr = "0s"
 		}
@@ -327,6 +328,8 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 func styledStatusLabel(s tmux.PaneStatus, lang string) string {
 	label := s.Label(lang)
 	switch s {
+	case tmux.StatusRegistered:
+		return statusRegisteredStyle.Render(label)
 	case tmux.StatusRunning:
 		return statusRunningStyle.Render(label)
 	case tmux.StatusDone:

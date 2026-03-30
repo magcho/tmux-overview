@@ -10,7 +10,7 @@ import (
 
 type Config struct {
 	Display DisplayConfig `toml:"display"`
-	Status  StatusConfig  `toml:"status"`
+	Hook    HookConfig    `toml:"hook"`
 }
 
 type DisplayConfig struct {
@@ -20,10 +20,8 @@ type DisplayConfig struct {
 	Language     string `toml:"language"`
 }
 
-type StatusConfig struct {
-	RunningPatterns []string `toml:"running_patterns"`
-	DonePatterns    []string `toml:"done_patterns"`
-	ErrorPatterns   []string `toml:"error_patterns"`
+type HookConfig struct {
+	StateDir string `toml:"state_dir"` // Override state directory (default: $TMPDIR/tov/)
 }
 
 func DefaultConfig() Config {
