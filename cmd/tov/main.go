@@ -19,6 +19,9 @@ func main() {
 	// Subcommand routing (before flag.Parse)
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "help", "--help", "-h":
+			printHelp()
+			return
 		case "hook":
 			handleHook()
 			return
@@ -35,6 +38,42 @@ func main() {
 	}
 
 	runTUI()
+}
+
+const version = "2.0.0"
+
+func printHelp() {
+	fmt.Printf(`tov (tmux overseer) v%s
+
+tmuxの全ペインを一覧表示し、Claude Codeの実行状態を俯瞰できるTUIツール。
+
+Usage:
+  tov                       TUI起動
+  tov help                  このヘルプを表示
+  tov setup [flags]         Claude Codeフック設定をインストール
+  tov cleanup               終了済みペインのstale状態ファイルを削除
+  tov hook <Event>          フックイベント処理（Claude Codeから自動呼出し）
+  tov focus [flags]         tmuxペインにフォーカス（通知クリック時の内部用）
+
+Setup flags:
+  --dry-run                 変更をプレビュー（書き込みなし）
+  --remove                  tov フック設定を削除
+
+TUI flags:
+  -interval <seconds>       自動更新間隔（秒）。config.tomlの設定を上書き
+
+TUI keybindings:
+  ↑/k, ↓/j                 カーソル移動
+  Enter                     選択ペインにジャンプ
+  /                         フィルターモード開始
+  Esc                       フィルター解除
+  Space                     プレビュー展開/折畳
+  r                         手動更新
+  q, Ctrl+C                 終了
+
+Config: ~/.config/tov/config.toml
+State:  $TMPDIR/tov/*.json
+`, version)
 }
 
 func handleHook() {

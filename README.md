@@ -2,25 +2,26 @@
 
 tmuxの全セッション・ウィンドウ・ペインを一覧表示し、Claude Codeの実行状態を俯瞰しながら目的のペインへ素早くジャンプできるTUIツール。
 
+Claude Codeのライフサイクルフックと連携し、各ペインの状態（処理中・確認待ち・完了など）をリアルタイムで表示します。
+
 ```
-╭────────────────╮╭──────────────────────────────────────────────╮
-│SESSIONS        ││PANE DETAIL                                   │
-│▶ All           ││Session   work                                │
-│  work          ││Window    1:frontend                          │
-│  dev           ││Pane      %21  (active)                       │
-│  misc          ││CWD       ~/src/frontend                      │
-│                ││Status    🤖 Running  (42s)                   │
-│                ││Preview:                                      │
-│                ││  ✓ Updated Button.tsx                        │
-│                ││  ■ Writing tests...                          │
-╰────────────────╯╰──────────────────────────────────────────────╯
-╭────────────────────────────────────────────────────────────────╮
-│PANE LIST                                                       │
-│▶ work:1:frontend   %21 * 🤖 Running (42s)  ~/src/frontend     │
-│  work:2:api        %24   💤 Idle           ~/src/api-server   │
-│  dev:1:dashboard   %31   🤖 Running (2m)   ~/src/dashboard    │
-│  dev:2:infra       %38   ❌ Error          ~/src/infra        │
-╰────────────────────────────────────────────────────────────────╯
+ tov   │  Claude: 3 panes
+╭──────────────────────────────────────────────────────╮
+│PANE LIST                                             │
+│  DIRECTORY                STATUS            DURATION │
+│──────────────────────────────────────────────────────│
+│▶ frontend                 🤖 Running        42s     │
+│  api-server               ✅ Done           15s     │
+│  dashboard                ⏸ Waiting         3s     │
+╰──────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────╮
+│frontend  🤖 Running  (42s)  ~/src/frontend           │
+│  > Analyzing component tree...                       │
+│  ✓ Updated Button.tsx                                │
+│  ✓ Updated index.ts                                  │
+│  ■ Writing tests...                                  │
+╰──────────────────────────────────────────────────────╯
+ [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [q] 終了
 ```
 
 ## インストール
@@ -35,19 +36,37 @@ cd tmux-overview
 make install   # ~/.local/bin/tov にインストール
 ```
 
-**前提:** Go 1.22以上、tmuxがインストール済みであること。
+**前提:** Go 1.24以上、tmuxがインストール済みであること。
+
+## セットアップ
+
+Claude Codeのフック設定をインストールします。これにより、Claude Codeが状態変化時に自動で `tov` に通知するようになります。
+
+```bash
+# フック設定を ~/.claude/settings.json に追加
+tov setup
+
+# 変更内容をプレビュー（書き込みなし）
+tov setup --dry-run
+
+# フック設定を削除
+tov setup --remove
+```
 
 ## 使い方
 
 ```bash
-# 基本起動
+# TUI起動
 tov
 
-# 特定セッションのみ表示
-tov -s work
-
 # 更新間隔を変更（デフォルト: 2秒）
-tov --interval 5
+tov -interval 5
+
+# ヘルプ表示
+tov help
+
+# 終了済みペインのstale状態ファイルを削除
+tov cleanup
 ```
 
 ## キーバインド
@@ -58,11 +77,9 @@ tov --interval 5
 | `↓` / `j` | カーソル下移動 |
 | `Enter` | 選択ペインへジャンプ |
 | `/` | フィルターモード |
-| `Esc` | フィルタークリア / セッション選択解除 |
+| `Esc` | フィルタークリア |
 | `r` | 手動リフレッシュ |
 | `Space` | プレビュー展開/折畳 |
-| `Tab` | セッション一覧とペインリストのフォーカス切替 |
-| `1`-`9` | セッション番号で直接絞り込み |
 | `q` / `Ctrl+C` | 終了 |
 
 ## フィルター
@@ -78,15 +95,22 @@ Filter: biwa running
 
 ## ペインステータス
 
-`tmux capture-pane` の出力を解析して自動判定します。
+Claude Codeのライフサイクルフック（SessionStart, UserPromptSubmit, PreToolUse, Notification, Stop, SessionEnd）を受信して自動判定します。
 
-| ステータス | 判定条件 |
-|-----------|---------|
-| 🤖 Running | スピナー文字、Analyzing、Writing、Thinking 等を検出 |
-| ✅ Done | `> ` プロンプト、`✓ Task completed` を検出 |
-| ❌ Error | `Error:`、`Failed to`、`✗` を検出 |
-| 💤 Idle | シェルプロンプト (`$`, `%`, `❯`) を検出 |
-| ❓ Unknown | いずれにもマッチしない |
+| ステータス | 説明 |
+|-----------|------|
+| 📋 Registered | Claude Codeセッション開始（まだ実行前） |
+| 🤖 Running | プロンプト送信後、処理中 |
+| ⏸ Waiting | 権限確認など、ユーザー入力待ち |
+| ✅ Done | タスク完了 |
+
+## 通知（macOS）
+
+Notification/Stopイベント時に、macOSデスクトップ通知を送信します（`terminal-notifier` が必要）。通知をクリックすると該当ペインにジャンプします。
+
+```bash
+brew install terminal-notifier
+```
 
 ## 設定ファイル
 
@@ -97,26 +121,16 @@ Filter: biwa running
 interval = 2          # 自動更新間隔（秒）
 preview_lines = 10    # プレビューの最大行数
 cwd_max_length = 40   # CWD表示の最大文字数
+language = "en"       # "en" または "ja"
 
-[status]
-# ステータス判定パターン（正規表現）をカスタマイズ
-running_patterns = [
-  "[◐◑◒◓⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
-  "Analyzing",
-  "Writing",
-  "Thinking",
-]
+[hook]
+# state_dir = "/custom/path"  # 状態ファイルの保存先（デフォルト: $TMPDIR/tov/）
 
-done_patterns = [
-  "^> $",
-  "✓ Task completed",
-]
-
-error_patterns = [
-  "Error:",
-  "Failed to",
-  "✗",
-]
+[notify]
+enabled = true        # macOS通知の有効/無効
+# terminal_app = ""   # ターミナルアプリ名（$TERM_PROGRAMから自動検出）
+# sound = ""          # 通知音
+# icon = ""           # 通知アイコンのパス
 ```
 
 ## ライセンス
