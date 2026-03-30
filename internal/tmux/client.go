@@ -100,7 +100,7 @@ func (c *client) ListAllPanes() ([]Pane, error) {
 
 func (c *client) CapturePaneContent(paneID string, lines int) ([]string, error) {
 	startLine := fmt.Sprintf("-%d", lines)
-	out, err := runTmux("capture-pane", "-p", "-t", paneID, "-S", startLine)
+	out, err := runTmux("capture-pane", "-p", "-e", "-t", paneID, "-S", startLine)
 	if err != nil {
 		return nil, fmt.Errorf("capturing pane %s: %w", paneID, err)
 	}
