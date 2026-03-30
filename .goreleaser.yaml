@@ -41,6 +41,7 @@ brews:
   - repository:
       owner: magcho
       name: homebrew-magcho
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     name: tov
     homepage: "https://github.com/magcho/tmux-overview"
     description: "tmux overseer — TUI tool for monitoring all tmux panes with Claude Code status"
