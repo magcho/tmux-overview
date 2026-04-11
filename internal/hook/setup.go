@@ -123,7 +123,7 @@ func addHookEntry(hooks map[string]interface{}, event, tovCmd string, matcherVal
 	}
 
 	eventHooks, ok := hooks[event].([]interface{})
-	if !ok {
+	if !ok || len(eventHooks) == 0 {
 		// No existing hooks for this event; create new entry
 		hooks[event] = []interface{}{
 			map[string]interface{}{
@@ -139,19 +139,20 @@ func addHookEntry(hooks map[string]interface{}, event, tovCmd string, matcherVal
 		return
 	}
 
-	// Append tov hook to the first matcher group, or create a new one
-	if len(eventHooks) > 0 {
-		if group, ok := eventHooks[0].(map[string]interface{}); ok {
-			if groupHooks, ok := group["hooks"].([]interface{}); ok {
-				group["hooks"] = append(groupHooks, newHook)
-			}
+	// Append tov hook to the first matcher group, treating null hooks as empty.
+	if group, ok := eventHooks[0].(map[string]interface{}); ok {
+		groupHooks, ok := group["hooks"].([]interface{})
+		if !ok {
+			groupHooks = []interface{}{}
 		}
-	} else {
-		hooks[event] = append(eventHooks, map[string]interface{}{
-			"matcher": matcherValue,
-			"hooks":   []interface{}{newHook},
-		})
+		group["hooks"] = append(groupHooks, newHook)
+		return
 	}
+
+	hooks[event] = append(eventHooks, map[string]interface{}{
+		"matcher": matcherValue,
+		"hooks":   []interface{}{newHook},
+	})
 }
 
 // removeHookEntry removes tov hook entries from a hooks map for a given event.
