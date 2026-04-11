@@ -106,6 +106,59 @@ func TestStatusLabelLanguageSwitch(t *testing.T) {
 	}
 }
 
+func TestInferPaneStatusCodexPermissionPrompt(t *testing.T) {
+	preview := []string{
+		"• Calling",
+		"  └ vibe_kanban.create_issue_relationship(...)",
+		"Field 1/1",
+		"Allow the vibe_kanban MCP server to run tool \"create_issue_relationship\"?",
+		"enter to submit | esc to cancel",
+	}
+
+	got := inferPaneStatus("codex", tmux.StatusDone, preview)
+	if got != tmux.StatusWaiting {
+		t.Fatalf("inferPaneStatus() = %v, want %v", got, tmux.StatusWaiting)
+	}
+}
+
+func TestInferPaneStatusCodexHookTrailer(t *testing.T) {
+	preview := []string{
+		"• Running Stop hook",
+		"",
+		"Stop hook (completed)",
+	}
+
+	got := inferPaneStatus("codex", tmux.StatusDone, preview)
+	if got != tmux.StatusWaiting {
+		t.Fatalf("inferPaneStatus() = %v, want %v", got, tmux.StatusWaiting)
+	}
+}
+
+func TestInferPaneStatusIgnoresOldCodexHookLines(t *testing.T) {
+	preview := []string{
+		"• Running Stop hook",
+		"Stop hook (completed)",
+		"• AI に渡すときに迷わないよう、独立 issue のまま着手順を明示します。",
+	}
+
+	got := inferPaneStatus("codex", tmux.StatusRunning, preview)
+	if got != tmux.StatusRunning {
+		t.Fatalf("inferPaneStatus() = %v, want %v", got, tmux.StatusRunning)
+	}
+}
+
+func TestInferPaneStatusNonCodexUnchanged(t *testing.T) {
+	preview := []string{
+		"Allow the vibe_kanban MCP server to run tool \"create_issue_relationship\"?",
+		"enter to submit | esc to cancel",
+	}
+
+	got := inferPaneStatus("claude", tmux.StatusDone, preview)
+	if got != tmux.StatusDone {
+		t.Fatalf("inferPaneStatus() = %v, want %v", got, tmux.StatusDone)
+	}
+}
+
 func checkViewFits(t *testing.T, m Model, label string) {
 	t.Helper()
 	output := m.View()

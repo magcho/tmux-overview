@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"regexp"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,6 +13,11 @@ import (
 )
 
 type tickMsg time.Time
+
+var (
+	codexPermissionPromptPattern = regexp.MustCompile(`(?i)allow .* to run tool|field \d+/\d+|enter to submit \| esc to cancel`)
+	codexHookStatusPattern       = regexp.MustCompile(`(?i)^(?:[•*-]\s*)?(?:running [[:alnum:]_:-]+ hook|[[:alnum:]_:-]+ hook \(completed\))$`)
+)
 
 type panesMsg struct {
 	panes []tmux.Pane
@@ -126,6 +133,7 @@ func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 			lines, captureErr := c.CapturePaneContent(allPanes[i].ID, previewLines)
 			if captureErr == nil {
 				allPanes[i].Preview = lines
+				allPanes[i].Status = inferPaneStatus(allPanes[i].Agent, allPanes[i].Status, lines)
 			}
 
 			agentPanes = append(agentPanes, allPanes[i])
@@ -136,6 +144,72 @@ func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 
 		return panesMsg{panes: agentPanes}
 	}
+}
+
+func inferPaneStatus(agent string, current tmux.PaneStatus, preview []string) tmux.PaneStatus {
+	if agent != "codex" || len(preview) == 0 {
+		return current
+	}
+
+	lines := trailingNonEmptyLines(preview, 12)
+	if len(lines) == 0 {
+		return current
+	}
+
+	window := strings.Join(lines, "\n")
+	if codexPermissionPromptPattern.MatchString(window) {
+		return tmux.StatusWaiting
+	}
+
+	last := lines[len(lines)-1]
+	if codexHookStatusPattern.MatchString(last) {
+		return tmux.StatusWaiting
+	}
+
+	return current
+}
+
+func trailingNonEmptyLines(lines []string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+
+	var trimmed []string
+	for i := len(lines) - 1; i >= 0 && len(trimmed) < limit; i-- {
+		line := strings.TrimSpace(stripANSI(lines[i]))
+		if line == "" {
+			continue
+		}
+		trimmed = append(trimmed, line)
+	}
+
+	for i, j := 0, len(trimmed)-1; i < j; i, j = i+1, j-1 {
+		trimmed[i], trimmed[j] = trimmed[j], trimmed[i]
+	}
+	return trimmed
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+
+	inEscape := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inEscape {
+			if ch >= '@' && ch <= '~' {
+				inEscape = false
+			}
+			continue
+		}
+		if ch == 0x1b {
+			inEscape = true
+			continue
+		}
+		b.WriteByte(ch)
+	}
+
+	return b.String()
 }
 
 // visiblePanes returns agent-active panes, optionally filtered by text.
