@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/magcho/tmux-overview/internal/config"
 	"github.com/magcho/tmux-overview/internal/hook"
@@ -197,7 +197,7 @@ func runTUI() {
 	store := state.NewStore(cfg.Hook.StateDir)
 	model := tui.NewModel(client, store, cfg)
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model)
 	finalModel, err := p.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

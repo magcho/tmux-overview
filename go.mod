@@ -4,9 +4,9 @@ go 1.24.2
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/charmbracelet/lipgloss v1.1.0
+	charm.land/bubbletea/v2 v2.0.2
 	github.com/charmbracelet/x/ansi v0.11.6
+	charm.land/lipgloss/v2 v2.0.2
 )
 
 require (
