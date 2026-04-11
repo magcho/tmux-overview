@@ -108,7 +108,7 @@ func TestStatusLabelLanguageSwitch(t *testing.T) {
 
 func checkViewFits(t *testing.T, m Model, label string) {
 	t.Helper()
-	output := m.View()
+	output := m.View().Content
 	lines := strings.Split(output, "\n")
 
 	fmt.Printf("=== %s: %d lines for %d height ===\n", label, len(lines), m.height)

@@ -3,7 +3,7 @@ package tui
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/magcho/tmux-overview/internal/config"
 	"github.com/magcho/tmux-overview/internal/state"
