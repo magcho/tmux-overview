@@ -48,8 +48,11 @@ var version = "dev"
 func printHelp() {
 	fmt.Printf(`tov (tmux overseer) v%s
 
-tmuxの全ペインを一覧表示し、AIコーディングエージェントの実行状態を俯瞰できるTUIツール。
+tmux上のAIコーディングエージェント用ペインを一覧表示し、実行状態を俯瞰できるTUIツール。
 対応エージェント: Claude Code, Codex
+
+表示対象:
+  Claude Code / Codex のhook経由で状態ファイルが作られたペインのみ表示
 
 Usage:
   tov                       TUI起動
@@ -74,7 +77,6 @@ TUI keybindings:
   Enter                     選択ペインにジャンプ
   /                         フィルターモード開始
   Esc                       フィルター解除
-  Space                     プレビュー展開/折畳
   r                         手動更新
   q, Ctrl+C                 終了
 
