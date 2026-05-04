@@ -5,7 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/magcho/tmux-overview/internal/gitutil"
 	"github.com/magcho/tmux-overview/internal/tmux"
@@ -74,7 +75,14 @@ var (
 
 const borderOverhead = 2 // top + bottom border lines
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	view := tea.View{}
+	view.SetContent(m.viewContent())
+	view.AltScreen = true
+	return view
+}
+
+func (m Model) viewContent() string {
 	if m.quitting {
 		return ""
 	}
