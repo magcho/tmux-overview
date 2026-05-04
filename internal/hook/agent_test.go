@@ -7,8 +7,12 @@ import (
 )
 
 func TestDetectAgentDefault(t *testing.T) {
-	// Without CODEX_THREAD_ID, should default to Claude
+	// Without Codex-specific env vars, should default to Claude.
 	t.Setenv("CODEX_THREAD_ID", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_SANDBOX", "")
+	t.Setenv("CODEX_SANDBOX_NETWORK_DISABLED", "")
+	t.Setenv("CODEX_CI", "")
 	if got := DetectAgent(); got != AgentClaude {
 		t.Errorf("DetectAgent() = %q, want %q", got, AgentClaude)
 	}
@@ -16,6 +20,17 @@ func TestDetectAgentDefault(t *testing.T) {
 
 func TestDetectAgentCodex(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", "thread-123")
+	if got := DetectAgent(); got != AgentCodex {
+		t.Errorf("DetectAgent() = %q, want %q", got, AgentCodex)
+	}
+}
+
+func TestDetectAgentCodexByFallbackEnv(t *testing.T) {
+	t.Setenv("CODEX_THREAD_ID", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_SANDBOX", "seatbelt")
+	t.Setenv("CODEX_SANDBOX_NETWORK_DISABLED", "")
+	t.Setenv("CODEX_CI", "")
 	if got := DetectAgent(); got != AgentCodex {
 		t.Errorf("DetectAgent() = %q, want %q", got, AgentCodex)
 	}
@@ -152,6 +167,10 @@ func TestClaudeStatusTransition(t *testing.T) {
 
 func TestResolveAgentFallback(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_SANDBOX", "")
+	t.Setenv("CODEX_SANDBOX_NETWORK_DISABLED", "")
+	t.Setenv("CODEX_CI", "")
 	def := resolveAgent()
 	if def.Name != AgentClaude {
 		t.Errorf("resolveAgent() = %q, want %q", def.Name, AgentClaude)

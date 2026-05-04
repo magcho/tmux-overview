@@ -74,10 +74,25 @@ func AllAgents() []AgentDef {
 // DetectAgent determines the calling agent from environment variables.
 // Returns AgentClaude as the default (backward compatible).
 func DetectAgent() AgentName {
-	if os.Getenv("CODEX_THREAD_ID") != "" {
+	if isCodexEnvironment() {
 		return AgentCodex
 	}
 	return AgentClaude
+}
+
+func isCodexEnvironment() bool {
+	for _, key := range []string{
+		"CODEX_THREAD_ID",
+		"CODEX_HOME",
+		"CODEX_SANDBOX",
+		"CODEX_SANDBOX_NETWORK_DISABLED",
+		"CODEX_CI",
+	} {
+		if os.Getenv(key) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveAgent detects the agent and returns its definition, falling back to Claude.
