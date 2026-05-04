@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/magcho/tmux-overview/internal/codex"
 	"github.com/magcho/tmux-overview/internal/config"
 	"github.com/magcho/tmux-overview/internal/state"
 )
@@ -83,11 +84,26 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 	ps.Agent = string(agentDef.Name)
 
 	// Determine new status via agent-specific or default transition
+	prevStatus := ps.Status
 	var newStatus state.Status
 	if agentDef.ApplyTransition != nil {
 		newStatus = agentDef.ApplyTransition(eventType, input, ps.Status)
 	} else {
 		newStatus = defaultStatusTransition(eventType, input, ps.Status)
+	}
+
+	message := ""
+	if agentDef.StoreMessage != nil {
+		message = agentDef.StoreMessage(eventType, input)
+	}
+
+	if agentDef.Name == AgentCodex {
+		if inferredStatus, inferredMessage := detectCodexState(eventType, paneInfo.PaneID, newStatus); inferredStatus != "" {
+			newStatus = inferredStatus
+			if inferredMessage != "" {
+				message = inferredMessage
+			}
+		}
 	}
 
 	// Update status_changed_at only if status actually changed
@@ -100,18 +116,14 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 	ps.LastEvent = eventType
 	ps.LastEventAt = now
 
-	// Store message via agent-specific logic
-	if agentDef.StoreMessage != nil {
-		ps.Message = agentDef.StoreMessage(eventType, input)
-	} else {
-		ps.Message = ""
-	}
+	ps.Message = message
 
 	if err := store.Write(ps); err != nil {
 		return err
 	}
 
 	// Send macOS notification if enabled and agent supports it
+	sentNotification := false
 	if notifyCfg.Enabled && agentDef.NotifyTitle != nil {
 		title := agentDef.NotifyTitle(eventType)
 		if title != "" {
@@ -123,7 +135,20 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 				body = input.Message
 			}
 			sendNotification(title, body, paneInfo, notifyCfg)
+			sentNotification = true
 		}
+	}
+
+	if notifyCfg.Enabled && !sentNotification && prevStatus != newStatus && newStatus == state.StatusWaiting {
+		title := fmt.Sprintf("%s - 確認待ち", agentDef.DisplayLabel)
+		body := ps.Message
+		if body == "" {
+			body = input.Message
+		}
+		if body == "" {
+			body = "ユーザーの選択または承認が必要です"
+		}
+		sendNotification(title, body, paneInfo, notifyCfg)
 	}
 
 	return nil
@@ -168,4 +193,31 @@ func getTmuxPaneInfo() (tmuxPaneInfo, error) {
 		PaneIndex:   paneIdx,
 		SocketPath:  socketPath,
 	}, nil
+}
+
+func detectCodexState(eventType, paneID string, fallback state.Status) (state.Status, string) {
+	if eventType != "PreToolUse" {
+		return "", ""
+	}
+
+	for range 3 {
+		lines, err := capturePaneContent(paneID, 20)
+		if err == nil {
+			if waiting, summary := codex.DetectWaiting(lines); waiting {
+				return state.StatusWaiting, summary
+			}
+		}
+		time.Sleep(120 * time.Millisecond)
+	}
+
+	return fallback, ""
+}
+
+func capturePaneContent(paneID string, lines int) ([]string, error) {
+	startLine := fmt.Sprintf("-%d", lines)
+	out, err := exec.Command("tmux", "capture-pane", "-p", "-e", "-t", paneID, "-S", startLine).Output()
+	if err != nil {
+		return nil, fmt.Errorf("tmux capture-pane: %w", err)
+	}
+	return strings.Split(strings.TrimRight(string(out), "\n"), "\n"), nil
 }
