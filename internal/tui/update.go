@@ -56,13 +56,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case keyUp:
-		if m.paneCursor > 0 {
+		visible := m.visiblePanes()
+		if len(visible) == 0 {
+			return m, nil
+		}
+		if m.paneCursor <= 0 {
+			m.paneCursor = len(visible) - 1
+		} else {
 			m.paneCursor--
 		}
 
 	case keyDown:
 		visible := m.visiblePanes()
-		if m.paneCursor < len(visible)-1 {
+		if len(visible) == 0 {
+			return m, nil
+		}
+		if m.paneCursor >= len(visible)-1 {
+			m.paneCursor = 0
+		} else {
 			m.paneCursor++
 		}
 
