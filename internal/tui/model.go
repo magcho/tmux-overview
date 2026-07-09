@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,7 +27,9 @@ type Model struct {
 	allPanes []tmux.Pane
 
 	// Cursor
-	paneCursor int
+	paneCursor        int
+	cursorInitialized bool
+	originPaneID      string
 
 	// Filter
 	filterMode bool
@@ -53,6 +56,7 @@ func NewModel(client tmux.Client, store *state.Store, cfg config.Config) Model {
 		store:           store,
 		cfg:             cfg,
 		previewExpanded: true,
+		originPaneID:    os.Getenv("TOV_ORIGIN_PANE"),
 	}
 }
 
@@ -177,4 +181,34 @@ func (m Model) selectedPane() *tmux.Pane {
 		return &p
 	}
 	return nil
+}
+
+func initialPaneCursor(panes []tmux.Pane, originPaneID string) int {
+	cursor := 0
+	shortest := 30*time.Second + 1
+	for i, p := range panes {
+		switch p.Status {
+		case tmux.StatusDone, tmux.StatusWaiting:
+		default:
+			continue
+		}
+		if p.Duration <= 0 || p.Duration > 30*time.Second {
+			continue
+		}
+		if p.Duration < shortest {
+			cursor = i
+			shortest = p.Duration
+		}
+	}
+	if shortest <= 30*time.Second {
+		return cursor
+	}
+	if originPaneID != "" {
+		for i, p := range panes {
+			if p.ID == originPaneID {
+				return i
+			}
+		}
+	}
+	return cursor
 }

@@ -29,8 +29,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.allPanes = msg.panes
 
-		// Keep cursor in bounds
 		visible := m.visiblePanes()
+		if !m.cursorInitialized {
+			m.paneCursor = initialPaneCursor(visible, m.originPaneID)
+			m.cursorInitialized = true
+			return m, nil
+		}
+
+		// Keep cursor in bounds
 		if m.paneCursor >= len(visible) {
 			m.paneCursor = max(0, len(visible)-1)
 		}
