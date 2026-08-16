@@ -1,1 +1,4 @@
 /tov
+.gocache/
+.gomodcache/
+.DS_Store
