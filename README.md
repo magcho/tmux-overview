@@ -181,3 +181,7 @@ enabled = true        # macOS通知の有効/無効
 ## ライセンス
 
 MIT
+
+## リリース運用
+
+`v*` タグへのpushでReleaseワークフローが実行されます。GoReleaserはまずGitHub Releaseをdraftとして作成し、全プラットフォーム向けアーカイブと`checksums.txt`の生成・アップロードが成功した場合にのみ公開します。失敗時はdraftのまま残るため、原因を修正してから削除または再実行してください。
