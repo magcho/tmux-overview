@@ -186,8 +186,9 @@ func (m Model) viewPreview(width, innerHeight int) string {
 	p := *pane
 	lang := m.cfg.Display.Language
 
-	// 1-line summary: directory + status + duration
-	summary := detailTitleStyle.Render(gitutil.DisplayName(p.CWD)) + "  "
+	// 1-line summary: session + directory + status + duration
+	summary := statsStyle.Render("["+p.SessionName+"]") + " "
+	summary += detailTitleStyle.Render(gitutil.DisplayName(p.CWD)) + "  "
 	summary += styledStatusLabel(p.Status, lang)
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
 		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
@@ -226,9 +227,9 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 	lines = append(lines, listTitleStyle.Render("PANE LIST"))
 
 	// Column header
-	header := fmt.Sprintf("  %-38s %-16s %s", "DIRECTORY", "STATUS", "DURATION")
-	lines = append(lines, listHeaderStyle.Render(header))
-	colWidth := min(width-6, 60)
+	header := fmt.Sprintf("  %-*s  %-36s  %-16s  %s", sessionColWidth, "SESSION", "DIRECTORY", "STATUS", "DURATION")
+	lines = append(lines, listHeaderStyle.Render(clipToWidth(header, width-4)))
+	colWidth := min(width-6, 60+sessionColWidth+2)
 	if colWidth < 40 {
 		colWidth = 40
 	}
@@ -304,11 +305,22 @@ func truncateLines(lines []string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatPaneLine(p tmux.Pane, lang string) string {
-	dir := gitutil.DisplayName(p.CWD)
-	if ansi.StringWidth(dir) > 36 {
-		dir = ansi.Truncate(dir, 36, "…")
+// sessionColWidth is the display width of the SESSION column in the pane list.
+const sessionColWidth = 12
+
+// padRight pads s with spaces to the given display width (ANSI/wide-char aware),
+// truncating with "…" when it is too long.
+func padRight(s string, width int) string {
+	if ansi.StringWidth(s) > width {
+		s = ansi.Truncate(s, width, "…")
 	}
+	return s + strings.Repeat(" ", width-ansi.StringWidth(s))
+}
+
+func formatPaneLine(p tmux.Pane, lang string) string {
+	session := padRight(p.SessionName, sessionColWidth)
+
+	dir := gitutil.DisplayName(p.CWD)
 
 	statusStr := styledStatusLabel(p.Status, lang)
 
@@ -330,7 +342,7 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 		durationStr = "-"
 	}
 
-	return fmt.Sprintf("%-36s  %-16s  %s", dir, statusStr, durationStr)
+	return session + "  " + padRight(dir, 36) + "  " + padRight(statusStr, 16) + "  " + durationStr
 }
 
 func styledStatusLabel(s tmux.PaneStatus, lang string) string {
