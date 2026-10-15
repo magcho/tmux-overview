@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/magcho/tmux-overview/internal/config"
 	"github.com/magcho/tmux-overview/internal/state"
 	"github.com/magcho/tmux-overview/internal/tmux"
@@ -57,6 +58,35 @@ func TestViewHeight50(t *testing.T) {
 func TestViewHeightSmall(t *testing.T) {
 	m := testModel(t, 80, 15)
 	checkViewFits(t, m, "15-line terminal (small)")
+}
+
+// Narrow terminals must not wrap pane rows; otherwise the selected row is
+// pushed out of the list box and scrolling looks broken.
+func TestPaneListScrollNarrow(t *testing.T) {
+	for _, w := range []int{60, 70, 76, 80, 120} {
+		m := testModel(t, w, 40)
+		var panes []tmux.Pane
+		for i := 0; i < 15; i++ {
+			panes = append(panes, tmux.Pane{ID: fmt.Sprintf("%%%d", i), SessionName: fmt.Sprintf("session-%02d", i), WindowIndex: 1, CWD: fmt.Sprintf("/Users/test/src/project-%02d", i), Status: tmux.StatusRunning, Duration: 125 * time.Second})
+		}
+		m.allPanes = panes
+		m.paneCursor = len(panes) - 1
+
+		lines := strings.Split(m.viewContent(), "\n")
+		if len(lines) > m.height {
+			t.Errorf("w=%d: view has %d lines, exceeds height %d", w, len(lines), m.height)
+		}
+		listLines := m.viewPaneList(w, 10)
+		var selected string
+		for _, l := range strings.Split(listLines, "\n") {
+			if strings.Contains(ansi.Strip(l), "▶") {
+				selected = ansi.Strip(l)
+			}
+		}
+		if !strings.Contains(selected, "session-14") {
+			t.Errorf("w=%d: selected row not visible in pane list, got %q", w, selected)
+		}
+	}
 }
 
 func TestViewPreviewCollapsed(t *testing.T) {

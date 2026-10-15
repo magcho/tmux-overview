@@ -226,9 +226,14 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 	var lines []string
 	lines = append(lines, listTitleStyle.Render("PANE LIST"))
 
+	// Rows must not exceed the border's inner width: a wrapped row pushes
+	// the selected row out of the visible list.
+	rowWidth := width - 4
+	dirWidth := dirColWidth(rowWidth)
+
 	// Column header
-	header := fmt.Sprintf("  %-*s  %-36s  %-16s  %s", sessionColWidth, "SESSION", "DIRECTORY", "STATUS", "DURATION")
-	lines = append(lines, listHeaderStyle.Render(clipToWidth(header, width-4)))
+	header := "  " + padRight("SESSION", sessionColWidth) + "  " + padRight("DIRECTORY", dirWidth) + "  " + padRight("STATUS", statusColWidth) + "  DURATION"
+	lines = append(lines, listHeaderStyle.Render(clipToWidth(header, rowWidth)))
 	colWidth := min(width-6, 60+sessionColWidth+2)
 	if colWidth < 40 {
 		colWidth = 40
@@ -264,7 +269,7 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 
 	for i := start; i < end; i++ {
 		p := panes[i]
-		line := formatPaneLine(p, lang)
+		line := clipToWidth(formatPaneLine(p, lang, dirWidth), rowWidth-2)
 
 		if i == m.paneCursor {
 			lines = append(lines, paneSelectedStyle.Render("▶ "+line))
@@ -305,8 +310,22 @@ func truncateLines(lines []string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-// sessionColWidth is the display width of the SESSION column in the pane list.
-const sessionColWidth = 12
+// Display widths of the pane list columns.
+const (
+	sessionColWidth  = 12
+	statusColWidth   = 16
+	durationColWidth = 6
+	maxDirColWidth   = 36
+	minDirColWidth   = 10
+)
+
+// dirColWidth returns the DIRECTORY column width that fits rowWidth,
+// shrinking from maxDirColWidth down to minDirColWidth on narrow terminals.
+func dirColWidth(rowWidth int) int {
+	// "▶ " + session + "  " + dir + "  " + status + "  " + duration
+	w := rowWidth - (2 + sessionColWidth + 2 + 2 + statusColWidth + 2 + durationColWidth)
+	return min(maxDirColWidth, max(minDirColWidth, w))
+}
 
 // padRight pads s with spaces to the given display width (ANSI/wide-char aware),
 // truncating with "…" when it is too long.
@@ -317,7 +336,7 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-ansi.StringWidth(s))
 }
 
-func formatPaneLine(p tmux.Pane, lang string) string {
+func formatPaneLine(p tmux.Pane, lang string, dirWidth int) string {
 	session := padRight(p.SessionName, sessionColWidth)
 
 	dir := gitutil.DisplayName(p.CWD)
@@ -342,7 +361,7 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 		durationStr = "-"
 	}
 
-	return session + "  " + padRight(dir, 36) + "  " + padRight(statusStr, 16) + "  " + durationStr
+	return session + "  " + padRight(dir, dirWidth) + "  " + padRight(statusStr, statusColWidth) + "  " + durationStr
 }
 
 func styledStatusLabel(s tmux.PaneStatus, lang string) string {
