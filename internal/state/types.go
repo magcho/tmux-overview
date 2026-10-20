@@ -15,7 +15,8 @@ const (
 // PaneState holds the hook-derived state for a single tmux pane.
 type PaneState struct {
 	PaneID          string    `json:"pane_id"`
-	Agent           string    `json:"agent,omitempty"` // "claude", "codex", etc.
+	Agent           string    `json:"agent,omitempty"`      // "claude", "codex", etc.
+	SessionID       string    `json:"session_id,omitempty"` // Agent session that owns this pane
 	SessionName     string    `json:"session_name"`
 	WindowIndex     int       `json:"window_index"`
 	PaneIndex       int       `json:"pane_index"`

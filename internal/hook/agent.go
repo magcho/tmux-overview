@@ -31,6 +31,10 @@ type AgentDef struct {
 	// ApplyTransition maps (eventType, hookInput, currentStatus) -> newStatus.
 	// If nil, defaultStatusTransition is used.
 	ApplyTransition func(eventType string, input hookInput, current state.Status) state.Status
+	// IsHeadless reports whether the hook was invoked from a non-interactive session
+	// (e.g. `claude -p` spawned inside the pane), whose events must be ignored.
+	// If nil, every session is treated as interactive.
+	IsHeadless func() bool
 	// ShouldRemoveOnEvent returns true if the state file should be deleted for this event.
 	// If nil, state files are never deleted by event (rely on stale cleanup).
 	ShouldRemoveOnEvent func(eventType string) bool
