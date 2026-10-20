@@ -12,6 +12,7 @@ const (
 	keyFilter
 	keyEscape
 	keyRefresh
+	keyForceRefresh
 	keyQuit
 	keySpace
 )
@@ -30,6 +31,8 @@ func parseKey(msg tea.KeyMsg) keyAction {
 		return keyEscape
 	case "r":
 		return keyRefresh
+	case "R":
+		return keyForceRefresh
 	case "q", "ctrl+c":
 		return keyQuit
 	case " ":

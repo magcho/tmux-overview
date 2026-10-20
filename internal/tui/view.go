@@ -298,7 +298,7 @@ func (m Model) viewFooter() string {
 	if m.filterMode {
 		return footerStyle.Render(" [Enter] 確定  [Esc] キャンセル")
 	}
-	return footerStyle.Render(" [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [Space] プレビュー展開/折畳  [r] 更新  [Esc] フィルタ解除  [q] 終了")
+	return footerStyle.Render(" [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [Space] プレビュー展開/折畳  [r] 更新  [R] 強制復元  [Esc] フィルタ解除  [q] 終了")
 }
 
 // === Helpers ===

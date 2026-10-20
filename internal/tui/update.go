@@ -98,6 +98,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyRefresh:
 		return m, fetchPanes(m.client, m.store, m.cfg.Display.PreviewLines)
 
+	case keyForceRefresh:
+		return m, restorePanes(m.client, m.store, m.cfg.Display.PreviewLines)
+
 	case keySpace:
 		m.previewExpanded = !m.previewExpanded
 

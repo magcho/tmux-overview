@@ -109,6 +109,7 @@ bind o run-shell 'tmux display-popup -E -w 80% -h 80% -e TOV_ORIGIN_PANE=#{pane_
 | `/` | フィルターモード |
 | `Esc` | フィルタークリア |
 | `r` | 手動リフレッシュ |
+| `R` | 強制復元（フックを取りこぼして消えたペインを、実行中のエージェントから復元） |
 | `q` / `Ctrl+C` | 終了 |
 
 ## フィルター

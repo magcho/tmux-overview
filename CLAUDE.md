@@ -48,6 +48,7 @@ bubbletea の Elm Architecture (Model → Update → View) に従った構成:
   - `notify.go` — terminal-notifier呼び出し、トランスクリプト解析（tool_useコンテキスト/完了メッセージ抽出）
   - `focus.go` — 通知クリック時のtmuxペインフォーカス（`open -a` + `tmux -S <socket> switch-client`）
   - `setup.go` — マルチエージェント対応のフック設定自動追加/削除（共通ユーティリティ）
+- **`internal/discover/`** — `R`キーの強制復元。状態ファイルが無いペインを `~/.claude/sessions/<pid>.json`（`tmux`フィールド）や TTY 上のプロセス（`ps -t`）から検出して補完
 - **`internal/tmux/`** — tmuxとのやり取りを `Client` インターフェースで抽象化
   - `client.go` — `tmux` コマンドのサブプロセス呼び出し（`list-panes -a`, `capture-pane -p` 等）
   - `session.go` — Session / Window / Pane 構造体、PaneStatus enum

@@ -8,6 +8,7 @@ import (
 
 	"github.com/magcho/tmux-overview/internal/codex"
 	"github.com/magcho/tmux-overview/internal/config"
+	"github.com/magcho/tmux-overview/internal/discover"
 	"github.com/magcho/tmux-overview/internal/state"
 	"github.com/magcho/tmux-overview/internal/tmux"
 )
@@ -141,6 +142,31 @@ func fetchPanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
 		store.RemoveStale(livePaneIDs)
 
 		return panesMsg{panes: agentPanes}
+	}
+}
+
+// restorePanes recreates missing state files from the running agents themselves
+// (hook events can be lost), then fetches panes as usual.
+func restorePanes(c tmux.Client, store *state.Store, previewLines int) tea.Cmd {
+	return func() tea.Msg {
+		allPanes, err := c.ListAllPanes()
+		if err != nil {
+			return panesMsg{err: err}
+		}
+		targets := make([]discover.Pane, 0, len(allPanes))
+		for _, p := range allPanes {
+			targets = append(targets, discover.Pane{
+				ID:          p.ID,
+				SessionName: p.SessionName,
+				WindowIndex: p.WindowIndex,
+				PaneIndex:   p.Index,
+				TTY:         p.TTY,
+			})
+		}
+		if _, err := discover.Restore(store, targets, discover.DefaultSources()); err != nil {
+			return panesMsg{err: err}
+		}
+		return fetchPanes(c, store, previewLines)()
 	}
 }
 
