@@ -38,13 +38,19 @@ type tmuxPaneInfo struct {
 func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCfg config.NotifyConfig) error {
 	agentDef := resolveAgent()
 
+	// Headless child sessions inherit TMUX_PANE from the pane they were spawned in.
+	// Recording their events would overwrite (and on SessionEnd delete) the pane's state.
+	if agentDef.IsHeadless != nil && agentDef.IsHeadless() {
+		return nil
+	}
+
 	var input hookInput
 	if err := json.NewDecoder(stdin).Decode(&input); err != nil {
 		// stdin may be empty for some events; treat as empty input
 		input = hookInput{}
 	}
 
-	paneInfo, err := getTmuxPaneInfo()
+	paneInfo, err := getPaneInfo()
 	if err != nil {
 		// If not running inside tmux, exit silently (don't block the agent)
 		fmt.Fprintf(os.Stderr, "tov hook: %v\n", err)
@@ -55,6 +61,11 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 
 	// Check if this event should remove the state file (e.g. SessionEnd for Claude)
 	if agentDef.ShouldRemoveOnEvent != nil && agentDef.ShouldRemoveOnEvent(eventType) {
+		// Only the session that owns the pane may remove its state.
+		if cur, exists, _ := store.Read(paneInfo.PaneID); exists &&
+			cur.SessionID != "" && input.SessionID != "" && cur.SessionID != input.SessionID {
+			return nil
+		}
 		return store.Remove(paneInfo.PaneID)
 	}
 
@@ -82,6 +93,9 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 	ps.PaneIndex = paneInfo.PaneIndex
 	ps.TmuxSocket = paneInfo.SocketPath
 	ps.Agent = string(agentDef.Name)
+	if input.SessionID != "" {
+		ps.SessionID = input.SessionID
+	}
 
 	// Determine new status via agent-specific or default transition
 	prevStatus := ps.Status
@@ -153,6 +167,9 @@ func HandleEvent(eventType string, stdin io.Reader, store *state.Store, notifyCf
 
 	return nil
 }
+
+// getPaneInfo is a seam for tests.
+var getPaneInfo = getTmuxPaneInfo
 
 // getTmuxPaneInfo reads the current tmux pane information.
 func getTmuxPaneInfo() (tmuxPaneInfo, error) {

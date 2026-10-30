@@ -28,6 +28,12 @@ func claudeAgentDef() AgentDef {
 		ApplyTransition: func(eventType string, input hookInput, current state.Status) state.Status {
 			return claudeStatusTransition(eventType, input, current)
 		},
+		IsHeadless: func() bool {
+			// Interactive sessions use "cli"; `claude -p` uses "sdk-cli".
+			// Unset means an older Claude Code, which we treat as interactive.
+			ep := os.Getenv("CLAUDE_CODE_ENTRYPOINT")
+			return ep != "" && ep != "cli"
+		},
 		ShouldRemoveOnEvent: func(eventType string) bool {
 			return eventType == "SessionEnd"
 		},

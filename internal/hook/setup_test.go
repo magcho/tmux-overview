@@ -93,3 +93,74 @@ func TestSetupCodexHooksCanReinstallAfterRemove(t *testing.T) {
 		t.Fatalf("command = %v, want %q", got, "/tmp/tov hook SessionStart")
 	}
 }
+
+func TestAddHookEntryUsesHookTimeout(t *testing.T) {
+	hooks := map[string]interface{}{}
+	addHookEntry(hooks, "Stop", "/tmp/tov", "", nil)
+
+	group := hooks["Stop"].([]interface{})[0].(map[string]interface{})
+	hookMap := group["hooks"].([]interface{})[0].(map[string]interface{})
+	if got := hookMap["timeout"]; got != hookTimeoutSeconds {
+		t.Fatalf("timeout = %v, want %d", got, hookTimeoutSeconds)
+	}
+}
+
+func TestAddHookEntryRaisesTimeoutOfExistingTovHook(t *testing.T) {
+	// Settings read from JSON decode numbers as float64.
+	hooks := map[string]interface{}{
+		"Stop": []interface{}{
+			map[string]interface{}{
+				"matcher": "",
+				"hooks": []interface{}{
+					map[string]interface{}{
+						"type":    "command",
+						"command": "/other/hook.sh",
+						"timeout": float64(5),
+					},
+					map[string]interface{}{
+						"type":    "command",
+						"command": "/tmp/tov hook Stop",
+						"timeout": float64(5),
+					},
+				},
+			},
+		},
+	}
+
+	addHookEntry(hooks, "Stop", "/tmp/tov", "", nil)
+
+	groupHooks := hooks["Stop"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})
+	if len(groupHooks) != 2 {
+		t.Fatalf("len(groupHooks) = %d, want 2", len(groupHooks))
+	}
+	if got := groupHooks[0].(map[string]interface{})["timeout"]; got != float64(5) {
+		t.Fatalf("non-tov hook timeout = %v, want 5 (unchanged)", got)
+	}
+	if got := groupHooks[1].(map[string]interface{})["timeout"]; got != hookTimeoutSeconds {
+		t.Fatalf("tov hook timeout = %v, want %d", got, hookTimeoutSeconds)
+	}
+}
+
+func TestAddHookEntryKeepsLongerTimeoutOfExistingTovHook(t *testing.T) {
+	hooks := map[string]interface{}{
+		"Stop": []interface{}{
+			map[string]interface{}{
+				"matcher": "",
+				"hooks": []interface{}{
+					map[string]interface{}{
+						"type":    "command",
+						"command": "/tmp/tov hook Stop",
+						"timeout": float64(60),
+					},
+				},
+			},
+		},
+	}
+
+	addHookEntry(hooks, "Stop", "/tmp/tov", "", nil)
+
+	hookMap := hooks["Stop"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})[0].(map[string]interface{})
+	if got := hookMap["timeout"]; got != float64(60) {
+		t.Fatalf("timeout = %v, want 60 (user override kept)", got)
+	}
+}

@@ -186,8 +186,9 @@ func (m Model) viewPreview(width, innerHeight int) string {
 	p := *pane
 	lang := m.cfg.Display.Language
 
-	// 1-line summary: directory + status + duration
-	summary := detailTitleStyle.Render(gitutil.DisplayName(p.CWD)) + "  "
+	// 1-line summary: session + directory + status + duration
+	summary := statsStyle.Render("["+p.SessionName+"]") + " "
+	summary += detailTitleStyle.Render(gitutil.DisplayName(p.CWD)) + "  "
 	summary += styledStatusLabel(p.Status, lang)
 	if p.Status == tmux.StatusRunning && p.Duration > 0 {
 		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
@@ -225,10 +226,15 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 	var lines []string
 	lines = append(lines, listTitleStyle.Render("PANE LIST"))
 
+	// Rows must not exceed the border's inner width: a wrapped row pushes
+	// the selected row out of the visible list.
+	rowWidth := width - 4
+	dirWidth := dirColWidth(rowWidth)
+
 	// Column header
-	header := fmt.Sprintf("  %-38s %-16s %s", "DIRECTORY", "STATUS", "DURATION")
-	lines = append(lines, listHeaderStyle.Render(header))
-	colWidth := min(width-6, 60)
+	header := "  " + padRight("SESSION", sessionColWidth) + "  " + padRight("DIRECTORY", dirWidth) + "  " + padRight("STATUS", statusColWidth) + "  DURATION"
+	lines = append(lines, listHeaderStyle.Render(clipToWidth(header, rowWidth)))
+	colWidth := min(width-6, 60+sessionColWidth+2)
 	if colWidth < 40 {
 		colWidth = 40
 	}
@@ -263,7 +269,7 @@ func (m Model) viewPaneList(width, innerHeight int) string {
 
 	for i := start; i < end; i++ {
 		p := panes[i]
-		line := formatPaneLine(p, lang)
+		line := clipToWidth(formatPaneLine(p, lang, dirWidth), rowWidth-2)
 
 		if i == m.paneCursor {
 			lines = append(lines, paneSelectedStyle.Render("▶ "+line))
@@ -292,7 +298,7 @@ func (m Model) viewFooter() string {
 	if m.filterMode {
 		return footerStyle.Render(" [Enter] 確定  [Esc] キャンセル")
 	}
-	return footerStyle.Render(" [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [Space] プレビュー展開/折畳  [r] 更新  [Esc] フィルタ解除  [q] 終了")
+	return footerStyle.Render(" [↑↓/jk] 移動  [Enter] ジャンプ  [/] フィルター  [Space] プレビュー展開/折畳  [r] 更新  [R] 強制復元  [Esc] フィルタ解除  [q] 終了")
 }
 
 // === Helpers ===
@@ -304,11 +310,36 @@ func truncateLines(lines []string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatPaneLine(p tmux.Pane, lang string) string {
-	dir := gitutil.DisplayName(p.CWD)
-	if ansi.StringWidth(dir) > 36 {
-		dir = ansi.Truncate(dir, 36, "…")
+// Display widths of the pane list columns.
+const (
+	sessionColWidth  = 12
+	statusColWidth   = 16
+	durationColWidth = 6
+	maxDirColWidth   = 36
+	minDirColWidth   = 10
+)
+
+// dirColWidth returns the DIRECTORY column width that fits rowWidth,
+// shrinking from maxDirColWidth down to minDirColWidth on narrow terminals.
+func dirColWidth(rowWidth int) int {
+	// "▶ " + session + "  " + dir + "  " + status + "  " + duration
+	w := rowWidth - (2 + sessionColWidth + 2 + 2 + statusColWidth + 2 + durationColWidth)
+	return min(maxDirColWidth, max(minDirColWidth, w))
+}
+
+// padRight pads s with spaces to the given display width (ANSI/wide-char aware),
+// truncating with "…" when it is too long.
+func padRight(s string, width int) string {
+	if ansi.StringWidth(s) > width {
+		s = ansi.Truncate(s, width, "…")
 	}
+	return s + strings.Repeat(" ", width-ansi.StringWidth(s))
+}
+
+func formatPaneLine(p tmux.Pane, lang string, dirWidth int) string {
+	session := padRight(p.SessionName, sessionColWidth)
+
+	dir := gitutil.DisplayName(p.CWD)
 
 	statusStr := styledStatusLabel(p.Status, lang)
 
@@ -330,7 +361,7 @@ func formatPaneLine(p tmux.Pane, lang string) string {
 		durationStr = "-"
 	}
 
-	return fmt.Sprintf("%-36s  %-16s  %s", dir, statusStr, durationStr)
+	return session + "  " + padRight(dir, dirWidth) + "  " + padRight(statusStr, statusColWidth) + "  " + durationStr
 }
 
 func styledStatusLabel(s tmux.PaneStatus, lang string) string {

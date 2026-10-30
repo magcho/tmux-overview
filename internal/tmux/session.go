@@ -77,6 +77,7 @@ type Pane struct {
 	Index        int
 	CWD          string
 	PID          int
+	TTY          string // e.g. /dev/ttys001
 	Width        int
 	Height       int
 	Active       bool

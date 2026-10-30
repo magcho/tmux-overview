@@ -53,8 +53,8 @@ func (c *client) ListSessions() ([]Session, error) {
 }
 
 func (c *client) ListAllPanes() ([]Pane, error) {
-	// Format: session_name, window_index, window_name, window_active, pane_id, pane_index, pane_current_path, pane_pid, pane_width, pane_height, pane_active
-	format := "#{session_name}\t#{window_index}\t#{window_name}\t#{window_active}\t#{pane_id}\t#{pane_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_width}\t#{pane_height}\t#{pane_active}"
+	// Format: session_name, window_index, window_name, window_active, pane_id, pane_index, pane_current_path, pane_pid, pane_width, pane_height, pane_active, pane_tty
+	format := "#{session_name}\t#{window_index}\t#{window_name}\t#{window_active}\t#{pane_id}\t#{pane_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_width}\t#{pane_height}\t#{pane_active}\t#{pane_tty}"
 	out, err := runTmux("list-panes", "-a", "-F", format)
 	if err != nil {
 		return nil, fmt.Errorf("listing panes: %w", err)
@@ -67,7 +67,7 @@ func (c *client) ListAllPanes() ([]Pane, error) {
 			continue
 		}
 		fields := strings.Split(line, "\t")
-		if len(fields) < 11 {
+		if len(fields) < 12 {
 			continue
 		}
 
@@ -91,6 +91,7 @@ func (c *client) ListAllPanes() ([]Pane, error) {
 			Width:        width,
 			Height:       height,
 			Active:       active,
+			TTY:          fields[11],
 		}
 		panes = append(panes, p)
 	}

@@ -109,6 +109,11 @@ func tovBinaryPath() (string, error) {
 	return exe, nil
 }
 
+// hookTimeoutSeconds is the timeout written to each tov hook entry.
+// tov hook itself finishes in tens of milliseconds, but system-wide stalls
+// (e.g. EDR scanning process launches) can delay it by 5-30 seconds.
+const hookTimeoutSeconds = 30
+
 // addHookEntry adds a tov hook entry to a hooks map for a given event.
 // matcherValue is the JSON value for the "matcher" field ("" for Claude, nil for Codex).
 func addHookEntry(hooks map[string]interface{}, event, tovCmd string, matcherValue interface{}, extraFields map[string]interface{}) {
@@ -116,7 +121,7 @@ func addHookEntry(hooks map[string]interface{}, event, tovCmd string, matcherVal
 	newHook := map[string]interface{}{
 		"type":    "command",
 		"command": command,
-		"timeout": 5,
+		"timeout": hookTimeoutSeconds,
 	}
 	for k, v := range extraFields {
 		newHook[k] = v
@@ -136,6 +141,7 @@ func addHookEntry(hooks map[string]interface{}, event, tovCmd string, matcherVal
 
 	// Check if tov hook already exists in any matcher group
 	if hasTovHook(eventHooks, tovCmd) {
+		raiseTovHookTimeouts(eventHooks, tovCmd)
 		return
 	}
 
@@ -210,6 +216,36 @@ func hasTovHook(eventHooks []interface{}, tovCmd string) bool {
 		}
 	}
 	return false
+}
+
+// raiseTovHookTimeouts raises the timeout of existing tov hook entries to
+// hookTimeoutSeconds so that re-running setup migrates older installs.
+// Longer timeouts set by the user are kept.
+func raiseTovHookTimeouts(eventHooks []interface{}, tovCmd string) {
+	for _, matcherGroup := range eventHooks {
+		group, ok := matcherGroup.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		groupHooks, ok := group["hooks"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, h := range groupHooks {
+			hookMap, ok := h.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cmd, _ := hookMap["command"].(string)
+			if !isTovCommand(cmd, tovCmd) {
+				continue
+			}
+			if timeout, ok := hookMap["timeout"].(float64); ok && timeout >= hookTimeoutSeconds {
+				continue
+			}
+			hookMap["timeout"] = hookTimeoutSeconds
+		}
+	}
 }
 
 func isTovCommand(cmd string, tovCmd string) bool {

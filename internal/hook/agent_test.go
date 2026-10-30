@@ -224,3 +224,22 @@ func TestCodexNotifyTitle(t *testing.T) {
 		t.Errorf("Codex NotifyTitle(SessionStart) = %q, want empty", got)
 	}
 }
+
+func TestClaudeIsHeadless(t *testing.T) {
+	def, _ := GetAgent(AgentClaude)
+	tests := []struct {
+		entrypoint string
+		want       bool
+	}{
+		{"", false},
+		{"cli", false},
+		{"sdk-cli", true},
+		{"sdk-ts", true},
+	}
+	for _, tt := range tests {
+		t.Setenv("CLAUDE_CODE_ENTRYPOINT", tt.entrypoint)
+		if got := def.IsHeadless(); got != tt.want {
+			t.Errorf("IsHeadless() with CLAUDE_CODE_ENTRYPOINT=%q = %v, want %v", tt.entrypoint, got, tt.want)
+		}
+	}
+}

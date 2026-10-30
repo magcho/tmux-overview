@@ -102,3 +102,12 @@ func TestUpdateDoesNotResetInitializedCursor(t *testing.T) {
 		t.Fatalf("paneCursor = %d, want 1", got)
 	}
 }
+
+func TestParseKeyForceRefresh(t *testing.T) {
+	if got := parseKey(tea.KeyPressMsg(tea.Key{Code: 'R', Text: "R"})); got != keyForceRefresh {
+		t.Errorf("parseKey(R) = %v, want keyForceRefresh", got)
+	}
+	if got := parseKey(tea.KeyPressMsg(tea.Key{Code: 'r', Text: "r"})); got != keyRefresh {
+		t.Errorf("parseKey(r) = %v, want keyRefresh", got)
+	}
+}
