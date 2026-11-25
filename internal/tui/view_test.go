@@ -204,3 +204,43 @@ func checkViewFits(t *testing.T, m Model, label string) {
 		t.Errorf("[%s] View output has %d lines, exceeds terminal height %d (overflow: %d)", label, len(lines), m.height, len(lines)-m.height)
 	}
 }
+
+// Preview content captured from a wide pane must not wrap inside the narrower
+// tov window (e.g. a tmux popup); wrapped lines push the layout past the
+// bottom of the screen.
+func TestViewFitsWithWideContent(t *testing.T) {
+	repeat := func(s string, n int) []string {
+		lines := make([]string, n)
+		for i := range lines {
+			lines[i] = s
+		}
+		return lines
+	}
+	cases := []struct {
+		name  string
+		apply func(m *Model)
+	}{
+		{"long preview lines", func(m *Model) { m.allPanes[0].Preview = repeat(strings.Repeat("x", 300), 60) }},
+		{"wide-char preview", func(m *Model) { m.allPanes[0].Preview = repeat(strings.Repeat("日本語", 100), 60) }},
+		{"tab preview", func(m *Model) { m.allPanes[0].Preview = repeat("\tfoo\t"+strings.Repeat("y", 300), 60) }},
+		{"long cwd", func(m *Model) { m.allPanes[0].CWD = "/Users/test/" + strings.Repeat("deep/", 40) + "proj" }},
+		{"long filter", func(m *Model) { m.filterText = strings.Repeat("abc ", 40) }},
+		{"filter mode", func(m *Model) { m.filterMode = true }},
+	}
+	for _, size := range [][2]int{{60, 20}, {80, 24}, {100, 30}, {160, 40}} {
+		for _, tc := range cases {
+			m := testModel(t, size[0], size[1])
+			tc.apply(&m)
+			lines := strings.Split(m.viewContent(), "\n")
+			if len(lines) > m.height {
+				t.Errorf("%dx%d %s: %d lines, exceeds height %d", size[0], size[1], tc.name, len(lines), m.height)
+			}
+			for i, l := range lines {
+				if w := ansi.StringWidth(l); w > m.width {
+					t.Errorf("%dx%d %s: line %d is %d cells wide, exceeds width %d", size[0], size[1], tc.name, i+1, w, m.width)
+					break
+				}
+			}
+		}
+	}
+}
