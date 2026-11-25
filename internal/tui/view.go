@@ -122,7 +122,7 @@ func (m Model) viewContent() string {
 	var sections []string
 
 	// === Header ===
-	sections = append(sections, m.viewHeader(w))
+	sections = append(sections, clipToWidth(m.viewHeader(w), w))
 
 	// === Pane List (top, compact) ===
 	sections = append(sections, m.viewPaneList(w, listInner))
@@ -131,7 +131,7 @@ func (m Model) viewContent() string {
 	sections = append(sections, m.viewPreview(previewWidth, previewInner))
 
 	// === Footer ===
-	sections = append(sections, m.viewFooter())
+	sections = append(sections, clipToWidth(m.viewFooter(), w))
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
@@ -171,6 +171,9 @@ func (m Model) viewHeader(width int) string {
 
 func (m Model) viewPreview(width, innerHeight int) string {
 	var lines []string
+	// lipgloss v2 Width includes the border, so content must fit in width-2;
+	// a wider line wraps inside the box and pushes the layout off screen.
+	contentWidth := width - borderOverhead
 
 	pane := m.selectedPane()
 	if pane == nil {
@@ -197,7 +200,7 @@ func (m Model) viewPreview(width, innerHeight int) string {
 		summary += fmt.Sprintf("  (%s)", formatDuration(p.Duration))
 	}
 	summary += "  " + statsStyle.Render(abbreviateHome(p.CWD))
-	lines = append(lines, summary)
+	lines = append(lines, clipToWidth(summary, contentWidth))
 
 	// Preview content — fill remaining space
 	if len(p.Preview) > 0 {
@@ -208,7 +211,7 @@ func (m Model) viewPreview(width, innerHeight int) string {
 				previewContent = previewContent[len(previewContent)-remaining:]
 			}
 			for _, pl := range previewContent {
-				lines = append(lines, clipToWidth(pl, width))
+				lines = append(lines, clipToWidth(expandTabs(pl), contentWidth))
 			}
 		}
 	}
@@ -419,6 +422,12 @@ func clipToWidth(s string, maxWidth int) string {
 		return ""
 	}
 	return ansi.Truncate(s, maxWidth, "…")
+}
+
+// expandTabs replaces tabs the way lipgloss renders them (4 spaces) so that
+// width measurement matches the rendered output.
+func expandTabs(s string) string {
+	return strings.ReplaceAll(s, "\t", "    ")
 }
 
 func filterEmptyTrailingLines(lines []string) []string {
