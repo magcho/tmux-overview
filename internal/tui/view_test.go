@@ -19,6 +19,7 @@ func (c *mockClient) ListAllPanes() ([]tmux.Pane, error)                        
 func (c *mockClient) CapturePaneContent(id string, lines int) ([]string, error) { return nil, nil }
 func (c *mockClient) SwitchToPane(p tmux.Pane) error                            { return nil }
 func (c *mockClient) IsInsideTmux() bool                                        { return true }
+func (c *mockClient) SessionNameOf(paneID string) (string, error)               { return "", nil }
 
 func testPanes() []tmux.Pane {
 	return []tmux.Pane{

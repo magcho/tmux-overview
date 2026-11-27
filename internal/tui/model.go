@@ -31,6 +31,7 @@ type Model struct {
 	paneCursor        int
 	cursorInitialized bool
 	originPaneID      string
+	originSession     string
 
 	// Filter
 	filterMode bool
@@ -52,12 +53,18 @@ type Model struct {
 }
 
 func NewModel(client tmux.Client, store *state.Store, cfg config.Config) Model {
+	originPaneID := os.Getenv("TOV_ORIGIN_PANE")
+	// Resolve the session tov was launched from. With TOV_ORIGIN_PANE we ask
+	// for that pane's session; otherwise tmux resolves the current client's
+	// session (works both in a regular pane and inside display-popup).
+	originSession, _ := client.SessionNameOf(originPaneID)
 	return Model{
 		client:          client,
 		store:           store,
 		cfg:             cfg,
 		previewExpanded: true,
-		originPaneID:    os.Getenv("TOV_ORIGIN_PANE"),
+		originPaneID:    originPaneID,
+		originSession:   originSession,
 	}
 }
 
@@ -209,26 +216,9 @@ func (m Model) selectedPane() *tmux.Pane {
 	return nil
 }
 
-func initialPaneCursor(panes []tmux.Pane, originPaneID string) int {
-	cursor := 0
-	shortest := 30*time.Second + 1
-	for i, p := range panes {
-		switch p.Status {
-		case tmux.StatusDone, tmux.StatusWaiting:
-		default:
-			continue
-		}
-		if p.Duration <= 0 || p.Duration > 30*time.Second {
-			continue
-		}
-		if p.Duration < shortest {
-			cursor = i
-			shortest = p.Duration
-		}
-	}
-	if shortest <= 30*time.Second {
-		return cursor
-	}
+// initialPaneCursor picks the initial cursor position: the origin pane if it
+// is listed, otherwise the first pane in the origin session, otherwise the top.
+func initialPaneCursor(panes []tmux.Pane, originPaneID, originSession string) int {
 	if originPaneID != "" {
 		for i, p := range panes {
 			if p.ID == originPaneID {
@@ -236,5 +226,12 @@ func initialPaneCursor(panes []tmux.Pane, originPaneID string) int {
 			}
 		}
 	}
-	return cursor
+	if originSession != "" {
+		for i, p := range panes {
+			if p.SessionName == originSession {
+				return i
+			}
+		}
+	}
+	return 0
 }

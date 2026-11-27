@@ -14,6 +14,9 @@ type Client interface {
 	CapturePaneContent(paneID string, lines int) ([]string, error)
 	SwitchToPane(pane Pane) error
 	IsInsideTmux() bool
+	// SessionNameOf returns the session name of the given pane.
+	// An empty paneID resolves the current client's session.
+	SessionNameOf(paneID string) (string, error)
 }
 
 type client struct{}
@@ -25,6 +28,19 @@ func NewClient() Client {
 
 func (c *client) IsInsideTmux() bool {
 	return exec.Command("tmux", "display-message", "-p", "#{session_name}").Run() == nil
+}
+
+func (c *client) SessionNameOf(paneID string) (string, error) {
+	args := []string{"display-message", "-p"}
+	if paneID != "" {
+		args = append(args, "-t", paneID)
+	}
+	args = append(args, "#{session_name}")
+	out, err := runTmux(args...)
+	if err != nil {
+		return "", fmt.Errorf("resolving session name: %w", err)
+	}
+	return strings.TrimSpace(out), nil
 }
 
 func runTmux(args ...string) (string, error) {
