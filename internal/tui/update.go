@@ -31,7 +31,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		visible := m.visiblePanes()
 		if !m.cursorInitialized {
-			m.paneCursor = initialPaneCursor(visible, m.originPaneID)
+			m.paneCursor = initialPaneCursor(visible, m.originPaneID, m.originSession)
 			m.cursorInitialized = true
 			return m, nil
 		}

@@ -34,14 +34,14 @@ func TestHandleKeyWrapsDownFromLastPaneToFirst(t *testing.T) {
 	}
 }
 
-func TestUpdateInitialCursorSelectsMostRecentAttentionPane(t *testing.T) {
+func TestUpdateInitialCursorSelectsOriginPane(t *testing.T) {
 	m := testModel(t, 120, 24)
-	m.originPaneID = "%2"
+	m.originPaneID = "%3"
+	m.originSession = "dev"
 	panes := []tmux.Pane{
-		{ID: "%1", Status: tmux.StatusRunning, Duration: 5 * time.Second},
-		{ID: "%2", Status: tmux.StatusDone, Duration: 25 * time.Second},
-		{ID: "%3", Status: tmux.StatusWaiting, Duration: 8 * time.Second},
-		{ID: "%4", Status: tmux.StatusDone, Duration: 45 * time.Second},
+		{ID: "%1", SessionName: "work", Status: tmux.StatusWaiting, Duration: 5 * time.Second},
+		{ID: "%2", SessionName: "dev", Status: tmux.StatusRunning},
+		{ID: "%3", SessionName: "dev", Status: tmux.StatusDone},
 	}
 
 	updated, _ := m.Update(panesMsg{panes: panes})
@@ -52,20 +52,37 @@ func TestUpdateInitialCursorSelectsMostRecentAttentionPane(t *testing.T) {
 	}
 }
 
-func TestUpdateInitialCursorSelectsOriginPaneWithoutRecentAttention(t *testing.T) {
+func TestUpdateInitialCursorSelectsFirstPaneInOriginSession(t *testing.T) {
 	m := testModel(t, 120, 24)
-	m.originPaneID = "%3"
+	m.originPaneID = "%99" // origin pane itself is not an agent pane
+	m.originSession = "dev"
 	panes := []tmux.Pane{
-		{ID: "%1", Status: tmux.StatusRunning, Duration: 5 * time.Second},
-		{ID: "%2", Status: tmux.StatusDone, Duration: 31 * time.Second},
-		{ID: "%3", Status: tmux.StatusWaiting, Duration: 45 * time.Second},
+		{ID: "%1", SessionName: "work", Status: tmux.StatusWaiting, Duration: 5 * time.Second},
+		{ID: "%2", SessionName: "dev", Status: tmux.StatusRunning},
+		{ID: "%3", SessionName: "dev", Status: tmux.StatusDone},
 	}
 
 	updated, _ := m.Update(panesMsg{panes: panes})
 	got := updated.(Model).paneCursor
 
-	if got != 2 {
-		t.Fatalf("paneCursor = %d, want 2", got)
+	if got != 1 {
+		t.Fatalf("paneCursor = %d, want 1", got)
+	}
+}
+
+func TestUpdateInitialCursorFallsBackToTopWhenOriginSessionHasNoPanes(t *testing.T) {
+	m := testModel(t, 120, 24)
+	m.originSession = "other"
+	panes := []tmux.Pane{
+		{ID: "%1", SessionName: "work", Status: tmux.StatusRunning},
+		{ID: "%2", SessionName: "dev", Status: tmux.StatusDone, Duration: 5 * time.Second},
+	}
+
+	updated, _ := m.Update(panesMsg{panes: panes})
+	got := updated.(Model).paneCursor
+
+	if got != 0 {
+		t.Fatalf("paneCursor = %d, want 0", got)
 	}
 }
 

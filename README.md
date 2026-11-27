@@ -91,13 +91,13 @@ tov cleanup
 
 ### tmux popup から起動する
 
-tmux の popup で `tov` を開く場合は、呼び出し元ペインを `TOV_ORIGIN_PANE` として渡すと、起動直後のカーソルがそのペインに合います。
+起動直後のカーソルは、`tov` を起動したセッションのペインに合います（同じセッションに複数ある場合は一覧の先頭）。起動元セッションにエージェントペインが無い場合は、一覧の一番上が選択されます。
+
+tmux の popup で `tov` を開く場合は、呼び出し元ペインを `TOV_ORIGIN_PANE` として渡すと、そのペインのセッションを起動元として扱い、そのペイン自体が一覧にあればそれを選択します。
 
 ```tmux
 bind o run-shell 'tmux display-popup -E -w 80% -h 80% -e TOV_ORIGIN_PANE=#{pane_id} tov'
 ```
-
-通知後30秒以内に `tov` を開いた場合は、直近で `Done` / `Waiting` になったペインを優先して選択します。該当するペインがない場合に、`TOV_ORIGIN_PANE` のペインが初期選択されます。
 
 ## キーバインド
 
